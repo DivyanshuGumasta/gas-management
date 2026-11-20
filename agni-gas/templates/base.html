@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ title }}{% endblock %} · Agni Gas Agency</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand-avatar"><i data-icon="user"></i></span>
+      <span class="brand-name" data-biz-name>Agni Gas Agency</span>
+    </div>
+    <nav class="nav">
+      {% set items = [
+        ('home', '/', 'Home', 'home'),
+        ('sales', '/sales', 'Sales', 'dollar'),
+        ('customers', '/customers', 'Customer', 'users'),
+        ('udhaar', '/udhaar', 'Uddhar & Payments', 'wallet'),
+        ('purchases', '/purchases', 'Purchase', 'cart'),
+        ('suppliers', '/suppliers', 'Supplier', 'truck'),
+        ('stock', '/stock', 'Stock & Price', 'tag'),
+        ('reports', '/reports', 'Reports', 'chart'),
+        ('data', '/data', 'Data & sync', 'cloud'),
+        ('help', '/help', 'Help & support', 'headset'),
+      ] %}
+      {% for key, href, label, icon in items %}
+      <a href="{{ href }}" class="nav-item{% if nav == key %} active{% endif %}">
+        <i data-icon="{{ icon }}"></i><span>{{ label }}</span>
+      </a>
+      {% endfor %}
+    </nav>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <label class="search">
+        <i data-icon="search"></i>
+        <input type="search" id="global-search" placeholder="Search Invoice, Customer, Suppliers...">
+      </label>
+      <div class="topbar-actions">
+        <button class="btn btn-soft" id="btn-quick-add"><i data-icon="userPlus"></i>Quick Add</button>
+        <a class="btn btn-orange" href="/sales/new"><i data-icon="circlePlus"></i>New Sale</a>
+      </div>
+    </header>
+
+    <main class="page">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+
+  <div id="modal-root"></div>
+
+  <script src="{{ url_for('static', filename='js/config.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/icons.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/api.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/ui.js') }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>
