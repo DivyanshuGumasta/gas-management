@@ -15,5 +15,5 @@ def bad_request(err):
     return jsonify({"error": str(err)}), 400
 
 
-# One module per screen group; sales, stock, purchases ... are added as we build.
-from . import customers, dashboard, payments, people  # noqa: E402,F401
+# Keep one registered supplier route implementation; people.py was the old picker-only API.
+from . import customers, dashboard, payments, suppliers, purchases  # noqa: E402,F401

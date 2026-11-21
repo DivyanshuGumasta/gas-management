@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/customers.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/suppliers_purchases.css') }}">
+<div class="page-head sp-form-head"><div class="title-block"><a class="back-btn" href="/suppliers-purchases?tab=purchases" aria-label="Back">←</a><div><h1 class="page-title">New purchase</h1><small>Record the supplier's invoice and the stock received.</small></div></div><a class="btn btn-white" href="/suppliers-purchases?tab=purchases">Cancel</a></div>
+<div id="pn-error" class="banner banner-error" hidden><span id="pn-error-text"></span></div>
+<form id="pn-form" novalidate>
+  <div class="pn-layout">
+    <section class="pn-left">
+      <div class="panel-pad pn-panel">
+        <div class="pn-section-head"><h2>Purchase details</h2><button class="btn btn-white btn-sm" id="pn-add-supplier" type="button">+ Add supplier</button></div>
+        <div class="two">
+          <label class="field"><span>Supplier *</span><select class="select" id="pn-supplier" required><option value="">Select supplier</option></select><em class="err" id="pn-supplier-err"></em></label>
+          <label class="field"><span>Purchase date *</span><input class="input" id="pn-date" type="date" required></label>
+        </div>
+        <div class="pn-section-head"><h2>Items received</h2><small>Enter the quantities received from this supplier.</small></div>
+        <div class="pn-items" id="pn-items"><div class="sp-state">Loading cylinder types…</div></div>
+        <p class="hint-text">Full in adds full cylinders to stock. Empty out returns available empty cylinders to the supplier. New empty cylinders add to empty stock and are valued at the cylinder's security price.</p>
+        <div class="pn-section-head pn-other-head"><div><h2>Other goods</h2><small>Accessories and ordinary stock items supplied by this supplier.</small></div><div class="pn-other-actions"><button class="btn btn-white btn-sm" id="pn-create-catalog" type="button" disabled>＋ Create item</button><button class="btn btn-dark btn-sm" id="pn-add-catalog-row" type="button" disabled>＋ Add line</button></div></div>
+        <div id="pn-catalog-lines" class="pn-catalog-lines"><div class="sp-state">Select a supplier to load its other items.</div></div>
+      </div>
+    </section>
+    <aside class="pn-right">
+      <div class="pn-panel pn-payment-panel">
+        <h2>Payment</h2>
+        <label class="field"><span>Paid to supplier now</span><div class="pn-amount"><i>Rs</i><input id="pn-paid" class="input" inputmode="decimal" value="0"></div><small class="hint">Leave 0 if this purchase is on credit. You can pay later from the supplier ledger.</small></label>
+        <div class="two"><label class="field"><span>Paid from</span><select class="select" id="pn-paid-from"><option value="cash">Cash in hand</option><option value="bank">Bank / UPI</option></select></label><label class="field"><span>GST rate (%)</span><input class="input" id="pn-gst" type="number" min="0" max="100" step="0.01" inputmode="decimal" value="0"></label></div>
+        <label class="field"><span>Supplier's bill attachment (optional)</span><input class="input pn-file" type="file" id="pn-bill" accept=".pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/png,image/jpeg,image/webp"><small class="hint">PDF or image, maximum 5 MB.</small></label>
+        <label class="pn-check"><input type="checkbox" id="pn-update-prices" checked><span><b>Update purchase prices</b><small>Save the entered rates for this supplier and update the stock screen's latest purchase price.</small></span></label>
+        <label class="field"><span>Note (optional)</span><textarea class="textarea" id="pn-note" maxlength="500"></textarea></label>
+        <div class="pn-totals"><div><span>Subtotal</span><b id="pn-subtotal">Rs 0</b></div><div><span>GST (<i id="pn-gst-label">0</i>%)</span><b id="pn-gst-amount">Rs 0</b></div><div class="pn-grand"><span>Total</span><b id="pn-total">Rs 0</b></div><div><span>Balance on this purchase</span><b id="pn-balance">Rs 0</b></div></div>
+        <button class="btn btn-dark btn-block" id="pn-save" type="submit">Save purchase</button>
+      </div>
+    </aside>
+  </div>
+</form>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/suppliers_common.js') }}"></script>
+<script src="{{ url_for('static', filename='js/purchase_new.js') }}"></script>
+{% endblock %}

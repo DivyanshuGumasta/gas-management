@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/customers.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/suppliers_purchases.css') }}">
+
+<div id="sd-error" class="banner banner-error" hidden><span id="sd-error-text"></span><button class="btn btn-ghost btn-sm" id="sd-retry" type="button">Retry</button></div>
+<div id="sd-missing" class="state" hidden><b>Supplier not found</b>This supplier may have been archived.<a class="btn btn-dark" href="/suppliers-purchases?tab=suppliers">Back to suppliers</a></div>
+<div id="sd-main" hidden>
+  <div class="page-head">
+    <div class="title-block"><a class="back-btn" href="/suppliers-purchases?tab=suppliers" aria-label="Back to suppliers">←</a><div><h1 id="sd-name"></h1><small id="sd-gstin"></small></div></div>
+    <div class="head-actions"><button class="btn btn-white" id="sd-export" type="button">Export CSV</button><button class="btn btn-white" id="sd-edit" type="button">Edit</button><button class="btn btn-white" id="sd-archive" type="button">Archive</button></div>
+  </div>
+  <div class="sd-layout">
+    <aside>
+      <div class="sd-profile">
+        <div class="sd-profile-head"><span class="sp-supplier-avatar" id="sd-avatar"></span><div><b id="sd-name2"></b><small>Supplier</small></div></div>
+        <div class="sd-balance"><small>Outstanding payable</small><b id="sd-balance">Rs 0</b><span id="sd-balance-label">Clear</span></div>
+        <div class="sd-stats"><div><small>Purchases</small><b id="sd-purchase-count">0</b></div><div><small>Total purchased</small><b id="sd-total-purchases">Rs 0</b></div><div><small>Total paid</small><b id="sd-total-paid">Rs 0</b></div><div><small>Last purchase</small><b id="sd-last-purchase">—</b></div></div>
+        <div class="sd-meta" id="sd-meta"></div>
+      </div>
+      <div class="sd-actions"><button class="btn btn-dark" id="sd-new-purchase" type="button">New purchase</button><button class="btn btn-green" id="sd-pay" type="button">Pay supplier</button><button class="btn btn-white" id="sd-statement" type="button">Print statement</button></div>
+    </aside>
+    <section>
+      <div class="sp-detail-tabs" role="tablist">
+        <button class="tab on" data-tab="ledger" type="button">Ledger</button>
+        <button class="tab" data-tab="purchases" type="button">Purchases</button>
+        <button class="tab" data-tab="items" type="button">Items supplied</button>
+      </div>
+      <div class="panel" id="sd-panel"></div>
+    </section>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/suppliers_common.js') }}"></script>
+<script>window.SUPPLIER_ID = {{ supplier_id|int }};</script>
+<script src="{{ url_for('static', filename='js/supplier_detail.js') }}"></script>
+{% endblock %}

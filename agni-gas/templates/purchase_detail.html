@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/customers.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/suppliers_purchases.css') }}">
+<div id="pd-error" class="banner banner-error" hidden><span id="pd-error-text"></span><button class="btn btn-ghost btn-sm" id="pd-retry" type="button">Retry</button></div>
+<div id="pd-main" hidden>
+  <div class="page-head"><div class="title-block"><a class="back-btn" href="/suppliers-purchases?tab=purchases">←</a><div><h1 id="pd-title">Purchase record</h1><small id="pd-subtitle"></small></div></div><div class="head-actions"><a class="btn btn-white" id="pd-attachment" href="#" target="_blank" rel="noopener" hidden>View supplier bill</a><button class="btn btn-dark" id="pd-print" type="button">Print record</button></div></div>
+  <div class="pd-layout">
+    <section class="panel pd-record">
+      <div class="pd-record-head"><div><b>Agni Gas Agency</b><small>Internal purchase record — not a supplier invoice</small></div><strong id="pd-number"></strong></div>
+      <div class="pd-meta"><div><small>Supplier</small><b id="pd-supplier"></b><span id="pd-gstin"></span></div><div><small>Date</small><b id="pd-date"></b></div></div>
+      <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Item</th><th class="num">Quantity / Full in</th><th class="num">Empty out</th><th class="num">New empty</th><th class="num">Rate</th><th class="num">Amount</th></tr></thead><tbody id="pd-items"></tbody></table></div>
+      <div class="pd-totals" id="pd-totals"></div>
+      <div class="pd-payments"><h3>Payments recorded</h3><div id="pd-payments-list"></div></div>
+      <p id="pd-note" class="hint-text"></p>
+    </section>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/purchase_detail.js') }}"></script>{% endblock %}

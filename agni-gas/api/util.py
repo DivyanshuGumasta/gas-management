@@ -1,6 +1,7 @@
 """Validation helpers shared by the API modules. All raise ApiError (-> JSON error)."""
 import re
 from datetime import date
+from decimal import InvalidOperation
 
 from flask import request
 
@@ -44,7 +45,7 @@ def phone_field(data, key="phone"):
 def money_field(data, key, label, allow_zero=True):
     try:
         p = to_paise(data.get(key))
-    except ValueError:
+    except (ValueError, InvalidOperation, TypeError, OverflowError):
         raise ApiError(f"{label} is not a valid amount.", field=key)
     if p < 0:
         raise ApiError(f"{label} cannot be negative.", field=key)
@@ -77,3 +78,29 @@ def int_field(value, label, field=None, minimum=0, maximum=100000):
     if not minimum <= n <= maximum:
         raise ApiError(f"{label} must be between {minimum} and {maximum}.", field=field)
     return n
+
+
+def quantity_milli_field(value, label="Quantity", field=None, allow_zero=False):
+    """Parse a quantity to thousandths, avoiding binary-float arithmetic."""
+    from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+    try:
+        number = Decimal(str(value if value is not None else "").strip())
+    except (InvalidOperation, ValueError):
+        raise ApiError(f"{label} must be a valid number.", field=field)
+    if not number.is_finite():
+        raise ApiError(f"{label} must be a valid number.", field=field)
+    if number < 0 or (number == 0 and not allow_zero):
+        qualifier = "cannot be negative" if number < 0 else "must be greater than zero"
+        raise ApiError(f"{label} {qualifier}.", field=field)
+    if number > Decimal("1000000"):
+        raise ApiError(f"{label} is too large.", field=field)
+    milli = int((number * 1000).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    if milli == 0 and number > 0:
+        raise ApiError(f"{label} must be at least 0.001.", field=field)
+    return milli
+
+
+def quantity_from_milli(value):
+    value = int(value or 0)
+    whole, fraction = divmod(value, 1000)
+    return str(whole) if not fraction else f"{whole}.{fraction:03d}".rstrip("0")

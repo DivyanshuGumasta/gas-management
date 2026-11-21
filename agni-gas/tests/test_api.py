@@ -1,8 +1,11 @@
 import importlib
+import io
+import json
 import os
 import sys
 import tempfile
 import unittest
+from datetime import date
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
@@ -30,8 +33,8 @@ class ApiTests(unittest.TestCase):
         from money import to_paise, to_rupees
         self.assertEqual(to_paise("1450.50"), 145050)
         self.assertEqual(to_paise("1,15,250"), 11525000)
-        self.assertEqual(to_paise(0.1) + to_paise(0.2), 30)       # no float drift
-        self.assertEqual(to_paise("10.005"), 1001)                # rounds half up
+        self.assertEqual(to_paise(0.1) + to_paise(0.2), 30)
+        self.assertEqual(to_paise("10.005"), 1001)
         self.assertEqual(to_rupees(-175000), "-1750.00")
         with self.assertRaises(ValueError):
             to_paise("abc")
@@ -45,11 +48,11 @@ class ApiTests(unittest.TestCase):
 
     def test_dashboard(self):
         d = self.client.get("/api/dashboard").get_json()
-        self.assertEqual(d["today"]["sales"], "5550.00")      # tiku 4100 + harry 1450
-        self.assertEqual(d["today"]["payments"], "5050.00")   # 4100 + 950 paid
+        self.assertEqual(d["today"]["sales"], "5550.00")
+        self.assertEqual(d["today"]["payments"], "5050.00")
         self.assertEqual(d["today"]["udhaar_amount"], "500.00")
         self.assertEqual(d["today"]["udhaar_customers"], 1)
-        self.assertEqual(d["last7_total"], "7000.00")         # + yesterday's walk-in 1450
+        self.assertEqual(d["last7_total"], "7000.00")
         self.assertEqual(len(d["last7"]), 7)
         self.assertEqual(d["stock"], {"full": 20, "empty": 3, "with_customers": 1, "total_customers": 3})
         self.assertEqual(d["recent"][0]["customer"], "harry")
@@ -64,18 +67,226 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(len(self.client.get("/api/customers?q=ka").get_json()), 1)
         self.assertEqual(len(self.client.get("/api/customers?owing=1").get_json()), 1)
 
+    def test_supplier_purchase_workflow(self):
+        invalid_amount = self.client.post("/api/suppliers", json={
+            "name": "Invalid Amount Supplier", "gstin": "22AABCD1234E1Z5",
+            "opening_type": "payable", "opening_amount": "NaN",
+        })
+        self.assertEqual(invalid_amount.status_code, 400)
+
+        # Add a supplier with an opening payable balance.
+        response = self.client.post("/api/suppliers", json={
+            "name": "Test Supplier V032", "gstin": "22AABCD1234E1Z5",
+            "phone": "9876543210", "address": "Durg", "opening_type": "payable",
+            "opening_amount": "500", "note": "workflow test",
+        })
+        self.assertEqual(response.status_code, 201, response.get_json())
+        supplier = response.get_json()
+        sid = supplier["id"]
+        self.assertEqual(supplier["balance"], "500.00")
+
+        options = self.client.get(f"/api/purchases/options?supplier_id={sid}").get_json()
+        cylinder = next(x for x in options if x["name"] == "5 kg")
+        cylinder_id = cylinder["id"]
+        self.assertEqual(cylinder["empty_stock"], 1)
+
+        # Invalid GST input is rejected rather than producing a server error.
+        invalid_gst = self.client.post("/api/purchases", json={
+            "supplier_id": sid, "date": date.today().isoformat(), "gst_percent": "NaN",
+            "items": [{"cylinder_type_id": cylinder_id, "full_in": 1, "rate": "1300"}],
+        })
+        self.assertEqual(invalid_gst.status_code, 400)
+
+        # Record 2 full cylinders, return 1 empty, buy 1 new empty, 18% GST,
+        # pay part of the invoice and attach the supplier's own PDF bill.
+        payload = {
+            "supplier_id": sid, "date": date.today().isoformat(), "gst_percent": "18",
+            "paid_amount": "2000", "paid_from": "cash", "update_prices": True,
+            "note": "Test incoming stock",
+            "items": [{"cylinder_type_id": cylinder_id, "full_in": 2, "empty_out": 1,
+                       "new_empty": 1, "rate": "1300"}],
+        }
+        response = self.client.post("/api/purchases", data={
+            "payload": json.dumps(payload),
+            "supplier_bill": (io.BytesIO(b"%PDF-1.4 test supplier invoice"), "supplier-invoice.pdf"),
+        }, content_type="multipart/form-data")
+        self.assertEqual(response.status_code, 201, response.get_json())
+        purchase = response.get_json()
+        pid = purchase["id"]
+        self.assertEqual(purchase["number"], "P-00001")
+        self.assertEqual(purchase["subtotal"], "5100.00")  # 2 x 1300 + 1 x 2500 security
+        self.assertEqual(purchase["gst"], "918.00")
+        self.assertEqual(purchase["total"], "6018.00")
+        self.assertEqual(purchase["paid"], "2000.00")
+        self.assertEqual(purchase["due"], "4018.00")
+        self.assertTrue(purchase["has_attachment"])
+
+        # The supplier account includes opening payable + purchase - initial payment.
+        supplier = self.client.get(f"/api/suppliers/{sid}").get_json()
+        self.assertEqual(supplier["balance"], "4518.00")
+        self.assertEqual(supplier["total_purchases"], "6018.00")
+        self.assertEqual(supplier["total_paid"], "2000.00")
+
+        detail = self.client.get(f"/api/purchases/{pid}").get_json()
+        self.assertEqual(len(detail["items"]), 1)
+        self.assertEqual(detail["items"][0]["full_in"], 2)
+        self.assertEqual(detail["items"][0]["empty_out"], 1)
+        self.assertEqual(detail["items"][0]["new_empty"], 1)
+        self.assertEqual(len(detail["payments"]), 1)
+        self.assertTrue(detail["attachment_url"])
+        attachment = self.client.get(detail["attachment_url"])
+        self.assertEqual(attachment.status_code, 200)
+        self.assertIn(b"%PDF", attachment.data)
+
+        # Stock deltas are atomic with the saved purchase.
+        import db
+        conn = db.connect()
+        stock = conn.execute("SELECT full_qty,empty_qty,purchase_price_paise FROM cylinder_types WHERE id=?", (cylinder_id,)).fetchone()
+        self.assertEqual((stock["full_qty"], stock["empty_qty"], stock["purchase_price_paise"]), (5, 1, 130000))
+        movement = conn.execute("SELECT full_delta,empty_delta FROM stock_movements WHERE ref_type='purchase' AND ref_id=?", (pid,)).fetchone()
+        self.assertEqual((movement["full_delta"], movement["empty_delta"]), (2, 0))
+        conn.close()
+
+        # Updating purchase prices also creates the supplier-specific item rate.
+        options = self.client.get(f"/api/purchases/options?supplier_id={sid}").get_json()
+        self.assertEqual(next(x for x in options if x["id"] == cylinder_id)["rate"], "1300.00")
+        supplier_items = self.client.get(f"/api/suppliers/{sid}/items").get_json()
+        self.assertTrue(next(x for x in supplier_items if x["cylinder_type_id"] == cylinder_id)["supplied"])
+
+        # An allocated payment cannot exceed the remaining purchase balance.
+        overpayment = self.client.post(f"/api/suppliers/{sid}/payments", json={
+            "amount": "4018.01", "date": date.today().isoformat(), "paid_from": "bank", "purchase_id": pid,
+        })
+        self.assertEqual(overpayment.status_code, 409)
+
+        # A payment allocated to the purchase settles that invoice; a general payment
+        # then clears the opening payable balance. Cancelling a payment restores it.
+        response = self.client.post(f"/api/suppliers/{sid}/payments", json={
+            "amount": "4018", "date": date.today().isoformat(), "paid_from": "bank", "purchase_id": pid,
+        })
+        self.assertEqual(response.status_code, 201, response.get_json())
+        self.assertEqual(self.client.get(f"/api/purchases/{pid}").get_json()["due"], "0.00")
+        reversed_dates = self.client.get("/api/purchases?from=2026-11-22&to=2026-11-21")
+        self.assertEqual(reversed_dates.status_code, 400)
+        response = self.client.post(f"/api/suppliers/{sid}/payments", json={
+            "amount": "500", "date": date.today().isoformat(), "paid_from": "cash",
+        })
+        self.assertEqual(response.status_code, 201, response.get_json())
+        self.assertEqual(self.client.get(f"/api/suppliers/{sid}").get_json()["balance"], "0.00")
+        payment_id = response.get_json()["id"]
+        self.assertEqual(self.client.post(f"/api/supplier-payments/{payment_id}/cancel").status_code, 200)
+        self.assertEqual(self.client.get(f"/api/suppliers/{sid}").get_json()["balance"], "500.00")
+
+        # A final payment settles the account; archive retains the records.
+        self.assertEqual(self.client.post(f"/api/suppliers/{sid}/payments", json={
+            "amount": "500", "date": date.today().isoformat(), "paid_from": "cash",
+        }).status_code, 201)
+        self.assertEqual(self.client.get(f"/api/suppliers/{sid}").get_json()["balance"], "0.00")
+        self.assertEqual(self.client.delete(f"/api/suppliers/{sid}").status_code, 200)
+        self.assertEqual(self.client.get(f"/api/suppliers/{sid}").status_code, 404)
+        self.assertEqual(self.client.get(f"/api/purchases/{pid}").status_code, 200)
+
+    def test_catalog_items_and_other_goods_purchase(self):
+        # General goods are catalogue records separate from cylinder_types.
+        supplier_response = self.client.post("/api/suppliers", json={
+            "name": "Accessory Supplier", "gstin": "22AACCD1234E1Z5",
+            "opening_type": "payable", "opening_amount": "0",
+        })
+        self.assertEqual(supplier_response.status_code, 201, supplier_response.get_json())
+        sid = supplier_response.get_json()["id"]
+
+        created = self.client.post(f"/api/suppliers/{sid}/catalog-items", json={
+            "name": "Regulator", "unit": "pcs", "purchase_price": "250", "sale_price": "400",
+        })
+        self.assertEqual(created.status_code, 201, created.get_json())
+        item = created.get_json()
+        item_id = item["id"]
+        self.assertEqual((item["name"], item["unit"], item["purchase_price"], item["stock"]),
+                         ("Regulator", "pcs", "250.00", "0"))
+        self.assertEqual(self.client.get(f"/api/suppliers/{sid}/catalog-items").get_json()[0]["id"], item_id)
+        self.assertEqual(self.client.get(f"/api/purchases/catalog-options?supplier_id={sid}").get_json()[0]["rate"], "250.00")
+
+        duplicate = self.client.post(f"/api/suppliers/{sid}/catalog-items", json={
+            "name": "regulator", "unit": "pcs", "purchase_price": "260", "sale_price": "410",
+        })
+        self.assertEqual(duplicate.status_code, 409)
+
+        # Purchase an ordinary item without any cylinder line. Quantity is stored to 3 dp;
+        # rate and amount are exact paise, and its item name/unit are snapshotted.
+        purchase = self.client.post("/api/purchases", json={
+            "supplier_id": sid, "date": date.today().isoformat(), "gst_percent": "18",
+            "paid_amount": "200", "update_prices": True,
+            "catalog_items": [{"item_id": item_id, "quantity": "2", "rate": "250"}],
+        })
+        self.assertEqual(purchase.status_code, 201, purchase.get_json())
+        purchase_id = purchase.get_json()["id"]
+        self.assertEqual(purchase.get_json()["subtotal"], "500.00")
+        self.assertEqual(purchase.get_json()["gst"], "90.00")
+        self.assertEqual(purchase.get_json()["total"], "590.00")
+        self.assertEqual(purchase.get_json()["paid"], "200.00")
+        self.assertEqual(purchase.get_json()["items_summary"], "2 Regulator")
+
+        detail = self.client.get(f"/api/purchases/{purchase_id}").get_json()
+        self.assertEqual(detail["items"], [])
+        self.assertEqual(detail["catalog_items"], [{
+            "item_id": item_id, "name": "Regulator", "unit": "pcs", "quantity": "2",
+            "rate": "250.00", "amount": "500.00",
+        }])
+        supplier = self.client.get(f"/api/suppliers/{sid}").get_json()
+        self.assertEqual(supplier["balance"], "390.00")
+        ledger = self.client.get(f"/api/suppliers/{sid}/ledger").get_json()
+        self.assertIn("2 Regulator", ledger["rows"][1]["sub"])
+
+        import db
+        conn = db.connect()
+        stock = conn.execute("SELECT stock_qty_milli FROM catalog_items WHERE id=?", (item_id,)).fetchone()[0]
+        movement = conn.execute("SELECT quantity_delta_milli FROM catalog_stock_movements WHERE purchase_id=?", (purchase_id,)).fetchone()[0]
+        conn.close()
+        self.assertEqual(stock, 2000)
+        self.assertEqual(movement, 2000)
+
+        # Editing the catalogue item does not rewrite the historical purchase line.
+        updated = self.client.put(f"/api/suppliers/{sid}/catalog-items/{item_id}", json={
+            "name": "Heavy-duty regulator", "unit": "pcs", "purchase_price": "275", "sale_price": "450",
+        })
+        self.assertEqual(updated.status_code, 200, updated.get_json())
+        self.assertEqual(updated.get_json()["name"], "Heavy-duty regulator")
+        self.assertEqual(self.client.get(f"/api/purchases/{purchase_id}").get_json()["catalog_items"][0]["name"], "Regulator")
+
+        # An item may be attached to a second supplier without duplicating the master record.
+        second = self.client.post("/api/suppliers", json={
+            "name": "Second Accessory Supplier", "gstin": "22AAEED1234E1Z5",
+        }).get_json()
+        attached = self.client.post(f"/api/suppliers/{second['id']}/catalog-items", json={
+            "item_id": item_id, "purchase_price": "270",
+        })
+        self.assertEqual(attached.status_code, 201, attached.get_json())
+        self.assertEqual(attached.get_json()["purchase_price"], "270.00")
+
+        removed = self.client.delete(f"/api/suppliers/{sid}/catalog-items/{item_id}")
+        self.assertEqual(removed.status_code, 200)
+        self.assertEqual(self.client.get(f"/api/purchases/catalog-options?supplier_id={sid}").get_json(), [])
+        self.assertEqual(len(self.client.get(f"/api/suppliers/{second['id']}/catalog-items").get_json()), 1)
+        self.assertEqual(self.client.get(f"/api/purchases/{purchase_id}").status_code, 200)
+
+        invalid_quantity = self.client.post("/api/purchases", json={
+            "supplier_id": second["id"], "catalog_items": [{"item_id": item_id, "quantity": "NaN", "rate": "270"}],
+        })
+        self.assertEqual(invalid_quantity.status_code, 400)
+
     def test_suppliers(self):
-        rows = self.client.get("/api/suppliers").get_json()
-        self.assertEqual(rows[0]["balance"], "25000.00")
+        rows = {row["name"]: row for row in self.client.get("/api/suppliers").get_json()}
+        self.assertIn("goo goo", rows)
+        self.assertEqual(rows["goo goo"]["balance"], "25000.00")
 
     def test_pages(self):
         for url in ["/", "/sales", "/sales/new", "/sales/5", "/customers", "/customers/1",
-                    "/suppliers-purchases", "/purchases/new", "/stock", "/reports", "/data", "/help"]:
+                    "/suppliers-purchases", "/suppliers-purchases/supplier/1", "/purchases/new",
+                    "/purchases/1", "/stock", "/reports", "/data", "/help"]:
             self.assertEqual(self.client.get(url).status_code, 200, url)
-            """
-            self.assertEqual(self.client.get("/suppliers").status_code, 302)
-            self.assertEqual(self.client.get("/purchases").status_code, 302)
-            """
+        self.assertEqual(self.client.get("/suppliers").status_code, 302)
+        self.assertEqual(self.client.get("/purchases").status_code, 302)
+        self.assertEqual(self.client.get("/udhaar").status_code, 302)
 
 
 if __name__ == "__main__":

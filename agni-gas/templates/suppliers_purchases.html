@@ -1,72 +1,68 @@
 {% extends "base.html" %}
 {% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/customers.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/suppliers_purchases.css') }}">
 
 <div class="sp-page-head">
   <div>
     <h1 class="page-title">Suppliers &amp; Purchases</h1>
-    <p class="sp-subtitle">Manage supplier records and view incoming stock records from one place.</p>
+    <p class="sp-subtitle">Manage suppliers, purchases, stock received and payments in one place.</p>
   </div>
 </div>
 
 <div class="sp-tabs" role="tablist" aria-label="Suppliers and purchases">
-  <button class="sp-tab" id="sp-tab-suppliers" type="button" role="tab"
-          aria-controls="sp-view-suppliers" aria-selected="true" data-tab="suppliers">
+  <button class="sp-tab" id="sp-tab-suppliers" type="button" role="tab" aria-controls="sp-view-suppliers" aria-selected="true" data-tab="suppliers">
     <i data-icon="truck"></i><span>Suppliers</span>
   </button>
-  <button class="sp-tab" id="sp-tab-purchases" type="button" role="tab"
-          aria-controls="sp-view-purchases" aria-selected="false" data-tab="purchases">
+  <button class="sp-tab" id="sp-tab-purchases" type="button" role="tab" aria-controls="sp-view-purchases" aria-selected="false" data-tab="purchases">
     <i data-icon="cart"></i><span>Purchase history</span>
   </button>
 </div>
 
+<div id="sp-error" class="banner banner-error" hidden><span id="sp-error-text"></span><button class="btn btn-ghost btn-sm" id="sp-retry" type="button">Retry</button></div>
+
 <section id="sp-view-suppliers" class="sp-view" role="tabpanel" aria-labelledby="sp-tab-suppliers">
+  <div class="sp-summary-grid">
+    <article class="sp-summary-card"><small>Suppliers</small><b id="sp-supplier-total">0</b></article>
+    <article class="sp-summary-card"><small>Total payable</small><b class="sp-red" id="sp-supplier-payable">Rs 0</b></article>
+    <article class="sp-summary-card"><small>Supplier advances</small><b class="sp-green" id="sp-supplier-advance">Rs 0</b></article>
+  </div>
   <div class="sp-toolbar">
-    <label class="search sp-search">
-      <i data-icon="search"></i>
-      <input type="search" id="sp-supplier-search" placeholder="Search supplier name, phone or address" autocomplete="off">
-    </label>
-    <div class="sp-toolbar-actions">
-      <span class="sp-count" id="sp-supplier-count">Loading suppliers…</span>
-      <button class="btn btn-dark" type="button" disabled title="Supplier creation is not part of this frontend merge">
-        <i data-icon="userPlus"></i>Add supplier
-      </button>
-    </div>
+    <label class="search sp-search"><i data-icon="search"></i><input type="search" id="sp-supplier-search" placeholder="Search supplier name, GSTIN, phone or address" autocomplete="off"></label>
+    <div class="sp-toolbar-actions"><span class="sp-count" id="sp-supplier-count">Loading suppliers…</span><button class="btn btn-white" id="sp-export-suppliers" type="button">Export CSV</button><button class="btn btn-dark" id="sp-add-supplier" type="button"><i data-icon="userPlus"></i>Add supplier</button></div>
   </div>
-
-  <div id="sp-supplier-error" class="banner banner-error" hidden>
-    <span id="sp-supplier-error-text">Could not load suppliers.</span>
-    <button class="btn btn-ghost btn-sm" id="sp-supplier-retry" type="button">Retry</button>
-  </div>
-
-  <div class="sp-list-card" id="sp-supplier-list" aria-live="polite">
-    <div class="sp-state">Loading suppliers…</div>
-  </div>
-  <p class="sp-footnote">Supplier records are loaded from the existing supplier list API. Purchase and payment calculations remain unchanged.</p>
+  <div class="sp-list-card" id="sp-supplier-list" aria-live="polite"><div class="sp-state">Loading suppliers…</div></div>
 </section>
 
 <section id="sp-view-purchases" class="sp-view" role="tabpanel" aria-labelledby="sp-tab-purchases" hidden>
-  <div class="sp-toolbar">
-    <div class="sp-filter-chips" aria-label="Purchase date filters">
-      <button class="sp-chip on" type="button" disabled>Today</button>
-      <button class="sp-chip" type="button" disabled>Last 7 days</button>
-      <button class="sp-chip" type="button" disabled>This month</button>
-      <button class="sp-chip" type="button" disabled>All</button>
+  <div class="sp-summary-grid sp-summary-two">
+    <article class="sp-summary-card"><small>Purchases in selected period</small><b id="sp-purchase-total">Rs 0</b><span id="sp-purchase-count">0 records</span></article>
+    <article class="sp-summary-card"><small>Total payable to suppliers</small><b class="sp-red" id="sp-purchase-payable">Rs 0</b><span>Current outstanding balance</span></article>
+  </div>
+  <div class="sp-toolbar sp-purchase-toolbar">
+    <div class="sp-filter-wrap">
+      <div class="sp-filter-chips" aria-label="Purchase date filters">
+        <button class="sp-chip" data-period="today" type="button">Today</button>
+        <button class="sp-chip" data-period="7d" type="button">Last 7 days</button>
+        <button class="sp-chip on" data-period="month" type="button">This month</button>
+        <button class="sp-chip" data-period="all" type="button">All</button>
+        <button class="sp-chip" data-period="custom" type="button">Custom</button>
+      </div>
+      <div class="sp-custom-dates" id="sp-custom-dates" hidden>
+        <label>From <input type="date" id="sp-from"></label>
+        <label>To <input type="date" id="sp-to"></label>
+      </div>
     </div>
-    <button class="btn btn-dark" type="button" disabled title="Purchase entry is not part of this frontend merge">
-      <i data-icon="plus"></i>New purchase
-    </button>
+    <div class="sp-toolbar-actions"><button class="btn btn-white" id="sp-export-purchases" type="button">Export CSV</button><button class="btn btn-dark" id="sp-new-purchase" type="button"><i data-icon="plus"></i>New purchase</button></div>
   </div>
-
-  <div class="sp-purchase-empty">
-    <span class="sp-empty-icon"><i data-icon="cart"></i></span>
-    <h2>Purchase history</h2>
-    <p>Purchase records will appear here when the purchase screen and its existing backend workflow are implemented.</p>
-    <span class="sp-coming-soon">Purchase interface not connected yet</span>
+  <div class="sp-toolbar sp-list-tools">
+    <label class="search sp-search"><i data-icon="search"></i><input type="search" id="sp-purchase-search" placeholder="Search purchase number or supplier" autocomplete="off"></label>
   </div>
+  <div class="sp-list-card" id="sp-purchase-list" aria-live="polite"><div class="sp-state">Loading purchases…</div></div>
 </section>
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/suppliers_common.js') }}"></script>
 <script src="{{ url_for('static', filename='js/suppliers_purchases.js') }}"></script>
 {% endblock %}
