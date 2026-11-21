@@ -28,14 +28,15 @@ def _purchase_payload(row):
         "paid": to_rupees(row["paid_paise"]), "due": to_rupees(row["due_paise"]),
         "status": "paid" if row["paid_paise"] >= row["total_paise"] else ("partial" if row["paid_paise"] else "unpaid"),
         "items_summary": row["items_summary"] or "No item quantity", "note": row["note"],
-        "attachment_name": row["supplier_bill_name"], "has_attachment": bool(row["has_attachment"]),
+        "attachment_name": row["supplier_bill_name"], "attachment_mime": row["supplier_bill_mime"],
+        "has_attachment": bool(row["has_attachment"]),
     }
 
 
 def _list_sql():
     return """SELECT p.id,p.number,p.supplier_id,p.purchase_date,p.created_at,
       p.subtotal_paise,p.gst_percent,p.gst_paise,p.total_paise,p.note,
-      p.supplier_bill_name,
+      p.supplier_bill_name,p.supplier_bill_mime,
       CASE WHEN p.supplier_bill_data IS NOT NULL AND length(p.supplier_bill_data)>0 THEN 1 ELSE 0 END AS has_attachment,
       s.name AS supplier_name,s.gstin,
       COALESCE((SELECT SUM(sp.amount_paise) FROM supplier_payments sp
@@ -94,7 +95,7 @@ def purchase_options():
     ).fetchall()
     return jsonify([{
         "id": r["id"], "name": r["name"], "full_stock": r["full_qty"], "empty_stock": r["empty_qty"],
-        "rate": to_rupees(r["supplier_price"] if r["supplier_price"] is not None else r["purchase_price_paise"]),
+        "rate": to_rupees(r["supplier_price"]),
         "security_rate": to_rupees(r["security_paise"]),
     } for r in rows])
 
@@ -395,8 +396,48 @@ def purchase_get(pid):
         "payments": [{"id":p["id"],"number":p["number"],"amount":to_rupees(p["amount_paise"]),
                       "date":p["payment_date"],"paid_from":p["paid_from"],"note":p["note"],"status":p["status"]} for p in payments],
         "attachment_url": f"/api/purchases/{pid}/attachment" if row["has_attachment"] else None,
+        "attachment_name": row["supplier_bill_name"],
+        "attachment_mime": row["supplier_bill_mime"],
     })
     return jsonify(result)
+
+
+@api_bp.post("/purchases/<int:pid>/attachment")
+def purchase_attachment_upload(pid):
+    """Attach or replace the supplier's original invoice after the purchase is recorded."""
+    filename, mime, data = _attachment()
+    if not data:
+        raise ApiError("Choose a supplier invoice file first.", field="supplier_bill")
+    db = get_db()
+    with transaction(db):
+        exists = db.execute("SELECT id FROM purchases WHERE id=?", (pid,)).fetchone()
+        if not exists:
+            raise ApiError("Purchase not found.", 404)
+        db.execute(
+            "UPDATE purchases SET supplier_bill_name=?,supplier_bill_mime=?,supplier_bill_data=? WHERE id=?",
+            (filename, mime, data, pid),
+        )
+    return jsonify({
+        "ok": True,
+        "attachment_name": filename,
+        "attachment_mime": mime,
+        "attachment_url": f"/api/purchases/{pid}/attachment",
+    })
+
+
+@api_bp.delete("/purchases/<int:pid>/attachment")
+def purchase_attachment_delete(pid):
+    """Remove an incorrect attachment while retaining the purchase ledger entry."""
+    db = get_db()
+    with transaction(db):
+        exists = db.execute("SELECT id FROM purchases WHERE id=?", (pid,)).fetchone()
+        if not exists:
+            raise ApiError("Purchase not found.", 404)
+        db.execute(
+            "UPDATE purchases SET supplier_bill_name=NULL,supplier_bill_mime=NULL,supplier_bill_data=NULL WHERE id=?",
+            (pid,),
+        )
+    return jsonify({"ok": True})
 
 
 @api_bp.get("/purchases/<int:pid>/attachment")

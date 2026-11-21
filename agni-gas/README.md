@@ -53,7 +53,7 @@ Data lives in `./data/agni.db` during development or `%APPDATA%\AgniGas` in the 
 - Cylinder sizes must be linked to a supplier before they are available in that supplier's purchase form. The purchase API independently checks the link at save time.
 - Ordinary goods (regulators, stoves, hoses, etc.) are master catalogue entries. **Create and edit master items in Stock & Price only.** Supplier profiles may link an existing catalogue item and maintain only that supplier's purchase rate. The purchase form may select only items linked to its selected supplier.
 - Cylinder stock remains separate from ordinary goods because cylinders track full, empty, damaged and customer-held quantities. Ordinary catalogue items use unit-based stock quantities.
-- A purchase stores the supplier's invoice details, optional PDF/image attachment (up to 5 MB), the quantities/rates used at the time, and any immediate payment. The app does not issue a replacement invoice to the supplier.
+- A purchase stores the quantities/rates used at the time and any immediate payment. The supplier's original invoice is optional at registration and can be attached or replaced later from the purchase detail screen (PDF/image up to 5 MB). The app never issues a bill or invoice to the supplier.
 - Full cylinders received increase full stock. Empty cylinders returned to the supplier reduce available empty stock and are not included in the purchase subtotal. Newly purchased empty cylinders increase empty stock and use the configured cylinder security price.
 - GST is calculated on the purchase subtotal. Remaining due is payable later through the supplier ledger.
 
@@ -62,8 +62,8 @@ Data lives in `./data/agni.db` during development or `%APPDATA%\AgniGas` in the 
 - Purchase cancellation/reversal is not implemented. Do not delete purchase rows manually; they affect stock and supplier balances.
 - Supplier archive is allowed only when its payable/advance balance is settled. Historical records are retained.
 - Stock & Price is a separate unfinished module. It will own creation/editing of cylinder types and ordinary catalogue master items; the supplier/purchase screens only select and link them.
-- Export dropdowns on supplier and purchase screens currently call the shared customer export placeholder. Actual PDF/Excel exports belong to the reports/export implementation. Browser printing is available for supplier statements and internal purchase records.
-- The supplier's uploaded invoice is the source document. The purchase detail page is an internal record, not a supplier-issued tax invoice.
+- Export dropdowns on supplier and purchase screens currently call the shared customer export placeholder. Actual PDF/Excel exports belong to the reports/export implementation. Supplier statements can be printed from the supplier profile.
+- The supplier's uploaded invoice is the source document. The purchase detail page is only an internal ledger entry; it has no print/share action and is not a generated invoice.
 
 ## V0.3.4 — Figma-aligned supplier/purchase workflow
 
@@ -74,3 +74,12 @@ Data lives in `./data/agni.db` during development or `%APPDATA%\AgniGas` in the 
 - Kept the two purchase summary cards shown in the Figma Purchases page.
 - Added a print-friendly internal purchase record and WhatsApp text sharing, without generating a replacement supplier invoice.
 - Updated tests to create/link master catalogue entries separately and to cover supplier-specific cylinder filtering.
+
+
+## V0.3.5 — Supplier item management and original supplier invoice
+
+- Supplier profile → Items supplied now shows only cylinder sizes linked to that supplier. Add a cylinder from active Stock & Price sizes, edit its supplier-specific purchase rate, or remove its link. Link changes never alter stock or historical purchase entries.
+- Added supplier cylinder link, rate-update and unlink API routes. Purchase options require a selected supplier and return only linked cylinder sizes; the create API independently rejects unlinked sizes.
+- Purchase registration can be completed without an invoice attachment. From the saved purchase detail page, attach, replace or remove the supplier's original PDF/image later.
+- Purchase detail is an internal stock/ledger entry, not a supplier bill. Removed the app-branded print and WhatsApp purchase-record actions. Attached images are displayed in-page; PDFs are previewed in-page and can be opened separately.
+- Tests cover supplier cylinder add/edit/remove, purchase filtering and rejection of unlinked sizes, plus delayed invoice attachment, replacement and removal.

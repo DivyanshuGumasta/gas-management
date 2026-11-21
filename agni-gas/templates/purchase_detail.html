@@ -11,39 +11,68 @@
   <div class="page-head">
     <div class="title-block">
       <a class="back-btn" href="/suppliers-purchases?tab=purchases" aria-label="Back to purchases">←</a>
-      <div><h1 id="pd-title">Purchase record</h1><small id="pd-subtitle"></small></div>
+      <div><h1 id="pd-title">Purchase entry</h1><small id="pd-subtitle"></small></div>
     </div>
-    <div class="head-actions">
-      <a class="btn btn-white" id="pd-attachment" href="#" target="_blank" rel="noopener" hidden>View supplier bill</a>
-      <button class="btn btn-dark" id="pd-print" type="button">Print</button>
-    </div>
-  </div>
-  <section class="panel pd-record">
-    <div class="pd-record-head">
-      <div><b data-biz-name>Agni Gas Agency</b><small>Internal purchase record · Not a supplier invoice</small></div>
-      <strong id="pd-number"></strong>
-    </div>
-    <div class="pd-meta">
-      <div><small>Supplier</small><b id="pd-supplier"></b><span id="pd-gstin"></span></div>
-      <div><small>Date</small><b id="pd-date"></b></div>
-    </div>
-    <div class="tbl-wrap">
-      <table class="tbl">
-        <thead><tr><th>Item</th><th class="num">Quantity / Full in</th><th class="num">Empty out</th><th class="num">New empty</th><th class="num">Rate</th><th class="num">Amount</th></tr></thead>
-        <tbody id="pd-items"></tbody>
-      </table>
-    </div>
-    <div class="pd-totals" id="pd-totals"></div>
-    <div class="pd-payments"><h3>Payments recorded</h3><div id="pd-payments-list"></div></div>
-    <p id="pd-note" class="pd-note"></p>
-  </section>
-  <div class="pd-actions">
-    <button class="btn btn-dark" id="pd-print-bottom" type="button">Print</button>
-    <button class="btn pd-whatsapp" id="pd-whatsapp" type="button">WhatsApp</button>
     <a class="btn btn-orange" href="/purchases/new"><i data-icon="plus"></i>New purchase</a>
+  </div>
+
+  <div class="pd-entry-layout">
+    <section class="panel pd-record">
+      <div class="pd-record-head">
+        <div><b>Purchase entry</b><small>Internal stock and supplier-ledger record. This is not a supplier invoice.</small></div>
+        <strong id="pd-number"></strong>
+      </div>
+      <div class="pd-meta">
+        <div><small>Supplier</small><b id="pd-supplier"></b><span id="pd-gstin"></span></div>
+        <div><small>Purchase date</small><b id="pd-date"></b></div>
+      </div>
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr><th>Item</th><th class="num">Quantity / Full in</th><th class="num">Empty out</th><th class="num">New empty</th><th class="num">Rate</th><th class="num">Amount</th></tr></thead>
+          <tbody id="pd-items"></tbody>
+        </table>
+      </div>
+      <div class="pd-totals" id="pd-totals"></div>
+      <div class="pd-payments"><h3>Payments recorded</h3><div id="pd-payments-list"></div></div>
+      <p id="pd-note" class="pd-note"></p>
+    </section>
+
+    <section class="panel pd-attachment-panel">
+      <div class="pd-attachment-head">
+        <div><h2>Supplier's original invoice</h2><p>Attach the bill issued by the supplier. You can add it now or after recording the purchase.</p></div>
+        <span class="pd-attachment-icon">▧</span>
+      </div>
+      <div id="pd-no-attachment" class="pd-attachment-empty">
+        <b>No supplier invoice attached yet</b>
+        <span>Waiting for the supplier's bill? That's fine. The purchase is already saved; attach the original invoice here when it arrives.</span>
+      </div>
+      <div id="pd-image-wrap" class="pd-image-wrap" hidden>
+        <img id="pd-invoice-image" alt="Original supplier invoice">
+      </div>
+      <div id="pd-pdf-wrap" class="pd-pdf-wrap" hidden>
+        <iframe id="pd-invoice-pdf" title="Original supplier invoice PDF"></iframe>
+      </div>
+      <div class="pd-attachment-file" id="pd-attachment-file" hidden>
+        <span>Attached file</span><b id="pd-attachment-name"></b>
+        <a id="pd-open-attachment" class="btn btn-white btn-sm" href="#" target="_blank" rel="noopener">Open original invoice</a>
+      </div>
+      <form id="pd-attachment-form" class="pd-attachment-form" novalidate>
+        <label class="field"><span id="pd-file-label">Choose supplier invoice</span>
+          <input class="input pn-file" type="file" id="pd-invoice-file" accept=".pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/png,image/jpeg,image/webp">
+          <small class="hint">PDF or image · Maximum 5 MB. Uploading a new file replaces the current attachment.</small>
+        </label>
+        <div class="form-error" id="pd-file-error" role="alert"></div>
+        <div class="pd-attachment-actions">
+          <button class="btn btn-dark" id="pd-upload-attachment" type="submit">Attach supplier invoice</button>
+          <button class="btn btn-white" id="pd-remove-attachment" type="button" hidden>Remove attachment</button>
+        </div>
+      </form>
+      <p class="pd-attachment-status" id="pd-file-status" role="status" aria-live="polite"></p>
+    </section>
   </div>
 </div>
 {% endblock %}
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/suppliers_common.js') }}"></script>
 <script src="{{ url_for('static', filename='js/purchase_detail.js') }}"></script>
 {% endblock %}

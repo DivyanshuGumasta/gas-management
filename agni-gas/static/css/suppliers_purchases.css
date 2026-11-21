@@ -44,11 +44,6 @@
 .sd-panel-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
 .sd-panel-head h2 { margin:0; font-size:14px; }
 .sd-note { color:var(--muted); font-size:11px; margin:4px 0 12px; }
-.sd-items-row { display:grid; grid-template-columns:22px minmax(100px,1fr) 140px; gap:10px; align-items:center; padding:11px 2px; border-top:1px solid var(--line-soft); }
-.sd-items-row:first-of-type { border-top:0; }
-.sd-items-row label { font-weight:600; font-size:12px; }
-.sd-items-row input[type=number] { width:100%; height:34px; border:1px solid #b4b3c8; border-radius:7px; padding:0 9px; text-align:right; }
-.sd-items-row input:disabled { background:#f3f3f7; color:#888; }
 .sd-item-section + .sd-item-section { border-top:1px solid var(--line); margin-top:22px; padding-top:18px; }
 .sd-catalog-section .sd-panel-head { align-items:flex-start; }
 .sd-catalog-section .sd-panel-head > div { min-width:0; }
@@ -190,7 +185,6 @@
   .pn-catalog-total { grid-column:1/-1; flex-direction:row; justify-content:space-between; align-items:center; }
   .sd-catalog-row { grid-template-columns:minmax(0,1fr) minmax(90px,.7fr); }
   .sd-catalog-actions { grid-column:1/-1; justify-content:flex-end; }
-  .sd-items-row { grid-template-columns:22px minmax(80px,1fr) minmax(85px,.7fr); }
   .pn-item-head { grid-template-columns:31px minmax(0,1fr) 105px; }
   .pd-record { padding:16px 13px; }
 }
@@ -202,4 +196,49 @@
   .pd-layout { max-width:none; }
   .pd-record { width:100%; border:0; padding:0; box-shadow:none; }
   .pn-payment-panel { position:static; }
+}
+
+/* Supplier-specific cylinder links: only items linked to this supplier are displayed. */
+.sd-cylinder-list { border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+.sd-cylinder-row { display:grid; grid-template-columns:34px minmax(120px,1fr) minmax(115px,.7fr) auto; gap:11px; align-items:center; padding:12px 13px; border-top:1px solid var(--line-soft); background:#fff; }
+.sd-cylinder-row:first-child { border-top:0; }
+.sd-cylinder-icon { display:grid; place-items:center; width:31px; height:31px; border-radius:9px; background:#e8f1ff; color:#3677c5; font-size:19px; }
+.sd-cylinder-row .sd-catalog-main b { font-size:13px; }
+.sd-cylinder-row .sd-catalog-main small { font-size:10px; }
+.sd-cylinder-row .sd-catalog-price b { font-size:12px; }
+.sd-cylinder-row .sd-catalog-actions { justify-content:flex-end; }
+
+/* Purchase detail is an internal ledger view, not a generated supplier bill. */
+.pd-entry-layout { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(300px,.8fr); gap:16px; align-items:start; }
+.pd-entry-layout .pd-record { width:auto; max-width:none; margin:0; padding:19px; border:1px solid #d2d1e0; border-radius:12px; }
+.pd-record-head b,.pd-record-head small { text-align:left; }
+.pd-record-head b { font-size:15px; }
+.pd-record-head small { font-size:10px; }
+.pd-attachment-panel { padding:17px; }
+.pd-attachment-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:14px; }
+.pd-attachment-head h2 { margin:0 0 4px; font-size:15px; }
+.pd-attachment-head p { margin:0; color:var(--muted); font-size:11px; line-height:1.45; }
+.pd-attachment-icon { width:34px; height:34px; flex:none; display:grid; place-items:center; border-radius:10px; background:#e9e7fb; color:#5549a2; font-size:20px; }
+.pd-attachment-empty { display:grid; gap:5px; padding:18px; border:1px dashed #c9c7da; border-radius:10px; background:#fafaff; text-align:center; }
+.pd-attachment-empty b { font-size:12px; }
+.pd-attachment-empty span { color:var(--muted); font-size:10px; line-height:1.45; }
+.pd-image-wrap,.pd-pdf-wrap { margin:10px 0 13px; overflow:hidden; border:1px solid var(--line); border-radius:9px; background:#f6f5fa; }
+.pd-image-wrap img { display:block; width:100%; max-height:680px; object-fit:contain; background:#eee; }
+.pd-pdf-wrap iframe { display:block; width:100%; height:570px; border:0; background:#fff; }
+.pd-attachment-file { display:grid; grid-template-columns:1fr auto; gap:7px 10px; align-items:center; margin:12px 0; padding:10px; border:1px solid var(--line); border-radius:9px; }
+.pd-attachment-file > span { grid-column:1/-1; color:var(--muted); font-size:10px; }
+.pd-attachment-file > b { min-width:0; overflow-wrap:anywhere; font-size:11px; }
+.pd-attachment-form { margin-top:14px; padding-top:13px; border-top:1px solid var(--line); }
+.pd-attachment-form .field { margin-bottom:10px; }
+.pd-attachment-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.pd-attachment-status { min-height:0; margin:8px 0 0; color:var(--green); font-size:11px; }
+.pd-attachment-status:empty { display:none; }
+
+@media (max-width:1000px) { .pd-entry-layout { grid-template-columns:1fr; } }
+@media (max-width:720px) {
+  .sd-cylinder-row { grid-template-columns:31px minmax(0,1fr) minmax(90px,.7fr); gap:8px; }
+  .sd-cylinder-row .sd-catalog-actions { grid-column:1/-1; justify-content:flex-end; }
+  .pd-entry-layout .pd-record { padding:14px 11px; }
+  .pd-attachment-panel { padding:13px; }
+  .pd-pdf-wrap iframe { height:450px; }
 }
