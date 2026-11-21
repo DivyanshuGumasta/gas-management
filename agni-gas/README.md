@@ -35,8 +35,7 @@ daily backup in a `backups` folder next to it (newest 30 kept).
 | Home / dashboard | done | done |
 | Sales, New sale, Tax invoice, Cancel bill | to be built | to be built |
 | Customers, customer ledger, receave payment | done | list API done |
-| Purchases (record + attach supplier's bill) | to be built | to be built |
-| Suppliers | to be built | list API done |
+| Suppliers & Purchases (combined navigation; separate workflows) | shell + supplier list done; purchase view placeholder | supplier list API done; purchase API still to be built |
 | Stock & Price, damaged cylinders | to be built | to be built |
 | Reports (5, PDF + Excel) | to be built | to be built |
 | Data & sync (backup / restore / export / import) | to be built | daily auto-backup done |
@@ -52,3 +51,8 @@ changes in V0.2:
   planned in `schema.sql` (comment at the bottom) and still to be built.
 - PDF / Excel export: every Export button already calls `Cust.exportData(kind, scope)`
   in `static/js/customers_common.js`. Implement it there when we do exports.
+
+changes in V0.3:
+- Combined Suppliers and Purchases into one sidebar workspace with separate tabs.
+- Kept supplier and purchase backend responsibilities separate; no schema or API merge.
+- The Suppliers tab uses the existing supplier-list endpoint. Purchase history remains a placeholder until its backend and screen are implemented.

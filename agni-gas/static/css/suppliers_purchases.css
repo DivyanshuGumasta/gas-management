@@ -1,0 +1,53 @@
+/* Combined Suppliers & Purchases workspace. The underlying APIs stay separate. */
+.sp-page-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:20px; }
+.sp-page-head .page-title { margin:0 0 5px; }
+.sp-subtitle { margin:0; color:var(--muted); font-size:13px; }
+
+.sp-tabs { display:flex; gap:10px; border-bottom:1px solid var(--line); margin-bottom:18px; }
+.sp-tab { display:inline-flex; align-items:center; justify-content:center; gap:9px; min-height:42px; padding:0 18px; margin-bottom:-1px; border:0; border-bottom:3px solid transparent; background:transparent; color:var(--muted); font:inherit; font-size:13px; font-weight:700; }
+.sp-tab i[data-icon] { width:17px; height:17px; }
+.sp-tab[aria-selected="true"] { color:var(--navy); border-bottom-color:var(--navy); }
+.sp-tab:hover { color:var(--text); }
+
+.sp-toolbar { display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; margin-bottom:16px; }
+.sp-search { width:min(390px, 100%); background:#fff; border-color:#b4b3c8; }
+.sp-toolbar-actions { display:flex; align-items:center; gap:12px; }
+.sp-count { color:var(--muted); font-size:12px; font-weight:600; }
+.sp-toolbar .btn[disabled] { opacity:.48; cursor:not-allowed; }
+
+.sp-list-card { overflow:hidden; background:#fff; border:1px solid #b4b3c8; border-radius:14px; }
+.sp-supplier-row { display:flex; align-items:center; gap:13px; padding:15px 18px; border-top:1px solid #e5e5ef; min-width:0; }
+.sp-supplier-row:first-child { border-top:0; }
+.sp-supplier-avatar { width:40px; height:40px; flex:none; display:grid; place-items:center; border-radius:10px; background:var(--indigo-soft); color:var(--indigo); font-weight:700; font-size:13px; }
+.sp-supplier-main { flex:1; min-width:0; display:flex; flex-direction:column; gap:3px; }
+.sp-supplier-main b { font-size:14px; overflow-wrap:anywhere; }
+.sp-supplier-main small { color:var(--muted); font-size:11px; overflow-wrap:anywhere; }
+.sp-supplier-balance { display:flex; flex-direction:column; align-items:flex-end; gap:2px; min-width:115px; }
+.sp-supplier-balance small { color:var(--muted); font-size:10px; }
+.sp-supplier-balance b { font-size:13px; }
+.sp-supplier-balance .sp-payable { color:var(--red); }
+.sp-supplier-balance .sp-advance { color:var(--green); }
+.sp-supplier-balance .sp-clear { color:var(--muted); }
+.sp-state { display:grid; place-items:center; min-height:150px; padding:28px; color:var(--muted); text-align:center; font-size:13px; }
+.sp-footnote { margin:10px 2px 0; color:var(--muted); font-size:11px; }
+
+.sp-filter-chips { display:flex; flex-wrap:wrap; gap:8px; }
+.sp-chip { height:34px; padding:0 14px; border:1px solid #b4b3c8; border-radius:8px; background:#fff; color:var(--muted); font:inherit; font-size:12px; font-weight:600; }
+.sp-chip.on { background:var(--navy); border-color:var(--navy); color:#fff; }
+.sp-chip:disabled { cursor:default; }
+.sp-purchase-empty { min-height:330px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:36px 22px; border:1px dashed #c9c8dc; border-radius:14px; background:rgba(255,255,255,.55); text-align:center; }
+.sp-empty-icon { width:54px; height:54px; display:grid; place-items:center; border-radius:15px; background:var(--indigo-soft); color:var(--indigo); }
+.sp-empty-icon i[data-icon] { width:25px; height:25px; }
+.sp-purchase-empty h2 { margin:14px 0 5px; font-size:17px; color:var(--text); }
+.sp-purchase-empty p { max-width:430px; margin:0; color:var(--muted); font-size:13px; }
+.sp-coming-soon { margin-top:15px; padding:5px 10px; border-radius:7px; background:#ecebf8; color:#51468e; font-size:11px; font-weight:700; }
+
+@media (max-width:700px) {
+  .sp-toolbar, .sp-toolbar-actions { align-items:stretch; }
+  .sp-toolbar-actions { width:100%; justify-content:space-between; }
+  .sp-toolbar-actions .btn { flex:none; }
+  .sp-supplier-row { padding:13px 12px; gap:9px; }
+  .sp-supplier-balance { min-width:92px; }
+  .sp-supplier-main small { max-width:100%; }
+  .sp-tab { flex:1; padding:0 8px; }
+}

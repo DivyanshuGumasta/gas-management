@@ -17,11 +17,9 @@ PAGES = {
     "/sales": ("placeholder.html", "sales", "Sales", "Sales list, filters and export"),
     "/sales/new": ("placeholder.html", "sales", "New Sale", "Cylinder sale form, payment and GST"),
     "/customers": ("customers.html", "customers", "Customers", "Customer list, add customer, ledger along with Udhaar list, receive payment, payment history"),
-    "/purchases": ("placeholder.html", "purchases", "Purchases",
-                   "Record purchases and attach the supplier's bill"),
+    "/suppliers-purchases": ("suppliers_purchases.html", "suppliers_purchases", "Suppliers & Purchases", ""),
     "/purchases/new": ("placeholder.html", "purchases", "New purchase",
                        "Purchase record with the supplier's bill attached"),
-    "/suppliers": ("placeholder.html", "suppliers", "Suppliers", "Supplier list, add supplier, ledger"),
     "/stock": ("placeholder.html", "stock", "Stock & Price", "Cylinder stock, prices, damaged stock, history"),
     "/reports": ("placeholder.html", "reports", "Reports", "The five business reports, PDF and Excel export"),
     "/data": ("placeholder.html", "data", "Data & Backup", "Backup, restore, export and import"),
@@ -59,10 +57,19 @@ def create_app() -> Flask:
         endpoint = "page_" + (url.strip("/").replace("/", "_") or "home")
         app.add_url_rule(url, endpoint, make_view(template, nav, title, note))
 
+    app.add_url_rule(
+        "/suppliers", "page_suppliers_legacy",
+        lambda: redirect("/suppliers-purchases?tab=suppliers"),
+    )
+    app.add_url_rule(
+        "/purchases", "page_purchases_legacy",
+        lambda: redirect("/suppliers-purchases?tab=purchases"),
+    )
+
     app.add_url_rule("/customers/<int:cid>", "page_customer_detail",
                      make_view("customer_detail.html", "customers", "Customer", ""))
     app.add_url_rule("/udhaar", "page_udhaar", lambda: redirect("/customers"))
-    
+
     # Sale detail / receipt (recent-sales rows link here)
     app.add_url_rule(
         "/sales/<int:sale_id>", "page_sale_detail",

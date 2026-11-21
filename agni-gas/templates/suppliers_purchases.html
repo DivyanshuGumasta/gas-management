@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/suppliers_purchases.css') }}">
+
+<div class="sp-page-head">
+  <div>
+    <h1 class="page-title">Suppliers &amp; Purchases</h1>
+    <p class="sp-subtitle">Manage supplier records and view incoming stock records from one place.</p>
+  </div>
+</div>
+
+<div class="sp-tabs" role="tablist" aria-label="Suppliers and purchases">
+  <button class="sp-tab" id="sp-tab-suppliers" type="button" role="tab"
+          aria-controls="sp-view-suppliers" aria-selected="true" data-tab="suppliers">
+    <i data-icon="truck"></i><span>Suppliers</span>
+  </button>
+  <button class="sp-tab" id="sp-tab-purchases" type="button" role="tab"
+          aria-controls="sp-view-purchases" aria-selected="false" data-tab="purchases">
+    <i data-icon="cart"></i><span>Purchase history</span>
+  </button>
+</div>
+
+<section id="sp-view-suppliers" class="sp-view" role="tabpanel" aria-labelledby="sp-tab-suppliers">
+  <div class="sp-toolbar">
+    <label class="search sp-search">
+      <i data-icon="search"></i>
+      <input type="search" id="sp-supplier-search" placeholder="Search supplier name, phone or address" autocomplete="off">
+    </label>
+    <div class="sp-toolbar-actions">
+      <span class="sp-count" id="sp-supplier-count">Loading suppliers…</span>
+      <button class="btn btn-dark" type="button" disabled title="Supplier creation is not part of this frontend merge">
+        <i data-icon="userPlus"></i>Add supplier
+      </button>
+    </div>
+  </div>
+
+  <div id="sp-supplier-error" class="banner banner-error" hidden>
+    <span id="sp-supplier-error-text">Could not load suppliers.</span>
+    <button class="btn btn-ghost btn-sm" id="sp-supplier-retry" type="button">Retry</button>
+  </div>
+
+  <div class="sp-list-card" id="sp-supplier-list" aria-live="polite">
+    <div class="sp-state">Loading suppliers…</div>
+  </div>
+  <p class="sp-footnote">Supplier records are loaded from the existing supplier list API. Purchase and payment calculations remain unchanged.</p>
+</section>
+
+<section id="sp-view-purchases" class="sp-view" role="tabpanel" aria-labelledby="sp-tab-purchases" hidden>
+  <div class="sp-toolbar">
+    <div class="sp-filter-chips" aria-label="Purchase date filters">
+      <button class="sp-chip on" type="button" disabled>Today</button>
+      <button class="sp-chip" type="button" disabled>Last 7 days</button>
+      <button class="sp-chip" type="button" disabled>This month</button>
+      <button class="sp-chip" type="button" disabled>All</button>
+    </div>
+    <button class="btn btn-dark" type="button" disabled title="Purchase entry is not part of this frontend merge">
+      <i data-icon="plus"></i>New purchase
+    </button>
+  </div>
+
+  <div class="sp-purchase-empty">
+    <span class="sp-empty-icon"><i data-icon="cart"></i></span>
+    <h2>Purchase history</h2>
+    <p>Purchase records will appear here when the purchase screen and its existing backend workflow are implemented.</p>
+    <span class="sp-coming-soon">Purchase interface not connected yet</span>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/suppliers_purchases.js') }}"></script>
+{% endblock %}
