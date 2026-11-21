@@ -85,58 +85,59 @@
     q("name").focus();
   }
 
-  const ITEM_UNITS = [
-    ["pcs", "Pieces"], ["kg", "Kilograms"], ["g", "Grams"], ["litre", "Litres"],
-    ["ml", "Millilitres"], ["packet", "Packets"], ["box", "Boxes"],
-    ["set", "Sets"], ["metre", "Metres"], ["pair", "Pairs"],
-  ];
-
-  function openCatalogItemForm({ supplierId, item = null, onSaved } = {}) {
+  async function openCatalogItemForm({ supplierId, item = null, onSaved } = {}) {
     if (!supplierId) { toast("Select a supplier first.", true); return; }
     const editing = !!item;
-    const body = UI.openModal(editing ? "Edit item" : "Add item to supplier");
+    const body = UI.openModal(editing ? "Edit supplier purchase price" : "Link item to supplier");
     body.innerHTML =
       '<form novalidate>' +
-      (!editing ? '<div class="field"><span>Add a new item or attach an existing catalogue item</span>' +
-        '<div class="seg" data-item-mode><button type="button" class="seg-btn on" data-mode="new">New item</button>' +
-        '<button type="button" class="seg-btn" data-mode="existing">Existing item</button></div></div>' : '') +
-      '<div data-new-fields>' +
-        '<label class="field"><span>Item name *</span><input class="input" name="name" maxlength="100" placeholder="e.g. Gas regulator"></label>' +
-        '<label class="field"><span>Unit *</span><select class="select" name="unit">' + ITEM_UNITS.map((u) => '<option value="' + u[0] + '">' + u[1] + '</option>').join("") + '</select></label>' +
-        '<label class="field"><span>Sale price (optional)</span><div class="amt"><i>Rs</i><input name="sale_price" inputmode="decimal" placeholder="0"></div><small class="hint">This is the usual selling price; old purchase records keep their saved rates.</small></label>' +
-      '</div>' +
-      (!editing ? '<div data-existing-fields hidden><label class="field"><span>Choose existing catalogue item *</span><select class="select" name="existing_item"><option value="">Loading items…</option></select></label></div>' : '') +
-      '<label class="field"><span>Purchase price from this supplier *</span><div class="amt"><i>Rs</i><input name="purchase_price" inputmode="decimal" placeholder="0"></div></label>' +
+      (editing
+        ? '<p class="hint-text">Supplier purchase rate for <b>' + esc(item.name) + '</b>.</p>'
+        : '<label class="field"><span>Choose an item from Stock &amp; Price</span>' +
+          '<select class="select" name="existing_item"><option value="">Loading items…</option></select>' +
+          '<small class="hint" data-item-hint></small></label>') +
+      '<label class="field"><span>Purchase price from this supplier *</span><div class="amt"><i>Rs</i>' +
+        '<input name="purchase_price" inputmode="decimal" autocomplete="off" placeholder="0"></div>' +
+        '<em class="err" data-err="purchase_price"></em></label>' +
       '<div class="form-error" role="alert"></div>' +
       '<div class="modal-foot"><button class="btn btn-white" type="button" data-close>Cancel</button>' +
-      '<button class="btn btn-dark" type="submit">' + (editing ? 'Save changes' : 'Add item') + '</button></div></form>';
+      '<button class="btn btn-dark" type="submit">' + (editing ? 'Save price' : 'Link item') + '</button></div></form>';
     const form = body.querySelector("form");
     const q = (name) => form.elements[name];
-    let mode = "new";
     if (editing) {
-      q("name").value = item.name || "";
-      q("unit").value = item.unit || "pcs";
-      q("sale_price").value = item.sale_price || "0";
-      q("purchase_price").value = item.purchase_price || "0";
+      q("purchase_price").value = item.purchase_price || "";
     } else {
-      Api.get("/api/items").then((rows) => {
-        q("existing_item").innerHTML = '<option value="">Choose an item</option>' + rows
-          .map((row) => '<option value="' + row.id + '" data-rate="' + esc(row.purchase_price) + '">' + esc(row.name) + ' (' + esc(row.unit) + ' · stock ' + esc(row.stock) + ')</option>')
-          .join("");
-        if (!rows.length) q("existing_item").innerHTML = '<option value="">No existing items yet</option>';
-      }).catch(() => { q("existing_item").innerHTML = '<option value="">Could not load existing items</option>'; });
-      form.addEventListener("click", (event) => {
-        const button = event.target.closest("[data-mode]");
-        if (!button) return;
-        mode = button.dataset.mode;
-        form.querySelectorAll("[data-mode]").forEach((b) => b.classList.toggle("on", b === button));
-        form.querySelector("[data-new-fields]").hidden = mode !== "new";
-        form.querySelector("[data-existing-fields]").hidden = mode !== "existing";
-        if (mode === "existing") q("existing_item").focus(); else q("name").focus();
-      });
-      q("existing_item").addEventListener("change", () => {
-        const option = q("existing_item").selectedOptions[0];
-        if (option && option.dataset.rate) q("purchase_price").value = option.dataset.rate;
+      const select = q("existing_item");
+      try {
+        const [allItems, linkedItems] = await Promise.all([
+          Api.get("/api/items"),
+          Api.get("/api/suppliers/" + supplierId + "/catalog-items"),
+        ]);
+        const linked = new Set(linkedItems.map((row) => Number(row.id)));
+        const available = allItems.filter((row) => !linked.has(Number(row.id)));
+        select.innerHTML = '<option value="">Choose an item</option>' + available.map((row) =>
+          '<option value="' + row.id + '" data-rate="' + esc(row.purchase_price) + '">' +
+          esc(row.name) + ' (' + esc(row.unit) + ' · stock ' + esc(row.stock) + ')</option>'
+        ).join("");
+        if (!allItems.length) {
+          select.innerHTML = '<option value="">No items available</option>';
+          select.disabled = true;
+          form.querySelector("[data-item-hint]").textContent = "No items yet. Create items in Stock & Price first.";
+        } else if (!available.length) {
+          select.innerHTML = '<option value="">All items are already linked</option>';
+          select.disabled = true;
+          form.querySelector("[data-item-hint]").textContent = "All active catalogue items are already linked to this supplier.";
+        } else {
+          form.querySelector("[data-item-hint]").textContent = "Items are created and maintained in Stock & Price. This only links an existing item.";
+        }
+      } catch (err) {
+        select.innerHTML = '<option value="">Could not load items</option>';
+        select.disabled = true;
+        form.querySelector("[data-item-hint]").textContent = err.message || "Could not load catalogue items.";
+      }
+      select.addEventListener("change", () => {
+        const selected = select.selectedOptions[0];
+        if (selected && selected.dataset.rate) q("purchase_price").value = selected.dataset.rate;
       });
     }
 
@@ -147,38 +148,41 @@
       const error = form.querySelector(".form-error");
       error.textContent = "";
       const purchasePrice = q("purchase_price").value.trim();
-      if (!(Number(purchasePrice) > 0)) { error.textContent = "Enter a purchase price greater than zero."; q("purchase_price").focus(); return; }
-      let payload, url, method;
+      if (!(Number(purchasePrice) > 0)) {
+        error.textContent = "Enter a purchase price greater than zero.";
+        q("purchase_price").focus();
+        return;
+      }
+      let url, payload;
       if (editing) {
-        payload = { name: q("name").value.trim(), unit: q("unit").value,
-          purchase_price: purchasePrice, sale_price: q("sale_price").value.trim() || "0" };
         url = "/api/suppliers/" + supplierId + "/catalog-items/" + item.id;
-        method = "put";
-      } else if (mode === "existing") {
-        const existingId = q("existing_item").value;
-        if (!existingId) { error.textContent = "Choose an existing item."; q("existing_item").focus(); return; }
-        payload = { item_id: Number(existingId), purchase_price: purchasePrice };
-        url = "/api/suppliers/" + supplierId + "/catalog-items";
-        method = "post";
+        payload = { purchase_price: purchasePrice };
       } else {
-        payload = { name: q("name").value.trim(), unit: q("unit").value,
-          purchase_price: purchasePrice, sale_price: q("sale_price").value.trim() || "0" };
-        if (!payload.name) { error.textContent = "Item name is required."; q("name").focus(); return; }
+        const itemId = Number(q("existing_item").value) || 0;
+        if (!itemId) {
+          error.textContent = "Choose an item from Stock & Price first.";
+          q("existing_item").focus();
+          return;
+        }
         url = "/api/suppliers/" + supplierId + "/catalog-items";
-        method = "post";
+        payload = { item_id: itemId, purchase_price: purchasePrice };
       }
       saving = true;
-      const button = form.querySelector('[type="submit"]'); button.disabled = true;
+      const button = form.querySelector('[type="submit"]');
+      button.disabled = true;
       try {
-        const saved = await Api[method](url, payload);
+        const saved = editing ? await Api.put(url, payload) : await Api.post(url, payload);
         UI.closeModal();
-        toast(editing ? "Item updated" : "Item added to supplier");
+        toast(editing ? "Supplier purchase price updated" : "Item linked to supplier");
         if (onSaved) onSaved(saved);
       } catch (err) {
-        error.textContent = err.message || "Could not save item.";
-      } finally { saving = false; button.disabled = false; }
+        error.textContent = err.message || "Could not save supplier item.";
+      } finally {
+        saving = false;
+        button.disabled = false;
+      }
     });
-    if (editing) q("name").focus();
+    if (editing) q("purchase_price").focus();
   }
 
   function openPaymentForm({ supplier, onSaved }) {

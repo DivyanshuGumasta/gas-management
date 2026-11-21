@@ -4,14 +4,7 @@
   const esc = UI.esc, fmt = UI.fmt;
   let supplier = null, activeTab = "ledger", itemsCache = [], catalogItemsCache = [], ledgerRows = [], purchaseRows = [];
 
-  function exportCsv(filename, headers, rows) {
-    const quote = (value) => '"' + String(value ?? "").replace(/"/g, '""') + '"';
-    const csv = [headers, ...rows].map((row) => row.map(quote).join(",")).join("\r\n");
-    const blob = new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = filename; a.click();
-    URL.revokeObjectURL(url);
-  }
+
 
   function showError(message) {
     $("sd-error-text").textContent = message || "";
@@ -93,11 +86,11 @@
           '<section class="sd-item-section">' +
             '<div class="sd-panel-head"><h2>Cylinder sizes</h2><button class="btn btn-dark btn-sm" id="sd-save-items" type="button">Save cylinder prices</button></div>' +
             '<p class="sd-note">Choose which cylinder sizes this supplier provides and set its usual cylinder purchase rate.</p>' +
-            (itemsCache.length ? itemsCache.map((it) => '<div class="sd-items-row"><input type="checkbox" data-supplied="' + it.cylinder_type_id + '" ' + (it.supplied ? 'checked' : '') + '><label>' + esc(it.name) + '</label><input aria-label="Purchase price for ' + esc(it.name) + '" type="number" min="0.01" step="0.01" data-price="' + it.cylinder_type_id + '" value="' + esc(it.purchase_price) + '" ' + (!it.supplied ? 'disabled' : '') + '></div>').join("") : '<div class="sp-state">No active cylinder sizes are configured in Stock &amp; Price.</div>') +
+            (itemsCache.length ? itemsCache.map((it) => '<div class="sd-items-row"><input type="checkbox" data-supplied="' + it.cylinder_type_id + '" ' + (it.supplied ? 'checked' : '') + '><label>' + esc(it.name) + '</label><input aria-label="Purchase price for ' + esc(it.name) + '" type="number" min="0.01" step="0.01" data-price="' + it.cylinder_type_id + '" value="' + esc(it.purchase_price) + '" ' + (!it.supplied ? 'disabled' : '') + '></div>').join("") : '<div class="sp-state">No cylinders yet. Add them in Stock &amp; Price.</div>') +
             '<div class="hint-text">Cylinder security values remain configured in Stock &amp; Price.</div>' +
           '</section>' +
           '<section class="sd-item-section sd-catalog-section">' +
-            '<div class="sd-panel-head"><div><h2>Other items supplied</h2><small class="sd-note">Accessories and regular goods such as regulators, stoves, hoses and other stock items.</small></div><button class="btn btn-dark btn-sm" id="sd-add-catalog-item" type="button">＋ Add item</button></div>' +
+            '<div class="sd-panel-head"><div><h2>Other items supplied</h2><small class="sd-note">Items and cylinders this supplier sells. Create new items in Stock &amp; Price.</small></div><button class="btn btn-dark btn-sm" id="sd-add-catalog-item" type="button">＋ Link item</button></div>' +
             (catalogItemsCache.length ? '<div class="sd-catalog-list">' + catalogItemsCache.map((it) =>
               '<div class="sd-catalog-row" data-catalog-row="' + it.id + '">' +
                 '<span class="sd-catalog-main"><b>' + esc(it.name) + '</b><small>' + esc(it.unit) + ' · In stock: ' + esc(it.stock) + '</small></span>' +
@@ -105,7 +98,7 @@
                 '<span class="sd-catalog-price"><small>Sale price</small><b>' + esc(fmt.money(it.sale_price)) + '</b></span>' +
                 '<span class="sd-catalog-actions"><button class="btn btn-white btn-sm" type="button" data-edit-catalog="' + it.id + '">Edit</button><button class="link-btn" type="button" data-remove-catalog="' + it.id + '">Remove</button></span>' +
               '</div>'
-            ).join("") + '</div>' : '<div class="sp-state sd-catalog-empty">No general items linked to this supplier yet. Add an item to use it in future purchase entries.</div>') +
+            ).join("") + '</div>' : '<div class="sp-state sd-catalog-empty">No items linked yet. Link items from the Stock &amp; Price catalogue.</div>') +
           '</section>' +
         '</div>';
 
@@ -142,16 +135,7 @@
   $("sd-new-purchase").addEventListener("click", () => { location.href = "/purchases/new?supplier=" + sid; });
   $("sd-pay").addEventListener("click", () => SupplierUI.openPaymentForm({ supplier, onSaved: async () => { await loadSupplier(); setTab(activeTab); } }));
   $("sd-statement").addEventListener("click", () => window.print());
-  $("sd-export").addEventListener("click", () => {
-    if (activeTab === "purchases") exportCsv("supplier-" + sid + "-purchases.csv", ["Purchase number","Date","Items","Total","Paid","Due","Status"], purchaseRows.map((p) => [p.number,p.date,p.items_summary,p.total,p.paid,p.due,p.status]));
-    else if (activeTab === "items") exportCsv("supplier-" + sid + "-items.csv",
-      ["Item type","Item","Unit","Supplied","Purchase price","Sale price","Stock"],
-      [
-        ...itemsCache.map((i) => ["Cylinder",i.name,"cylinder","Yes",i.purchase_price,"",""]),
-        ...catalogItemsCache.map((i) => ["General item",i.name,i.unit,"Yes",i.purchase_price,i.sale_price,i.stock]),
-      ]);
-    else exportCsv("supplier-" + sid + "-ledger.csv", ["Date","Detail","Purchase","Paid","Balance","Status"], ledgerRows.map((r) => [r.date,r.detail,r.purchase,r.paid,r.balance,r.status]));
-  });
+
   $("sd-retry").addEventListener("click", async () => { await loadSupplier(); setTab(activeTab); });
   document.querySelectorAll(".sp-detail-tabs [data-tab]").forEach((button) => button.addEventListener("click", () => setTab(button.dataset.tab)));
   $("sd-panel").addEventListener("click", (event) => {

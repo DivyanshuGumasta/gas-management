@@ -79,15 +79,17 @@ def _date_filter(query, where, params):
 
 @api_bp.get("/purchases/options")
 def purchase_options():
+    """Return only active cylinder sizes linked to the selected supplier."""
     db = get_db()
-    sid = request.args.get("supplier_id")
-    if sid:
-        sid = int_field(sid, "Supplier", minimum=1)
-        supplier_row(sid)
+    raw_sid = request.args.get("supplier_id")
+    if raw_sid in (None, ""):
+        return jsonify([])
+    sid = int_field(raw_sid, "Supplier", minimum=1)
+    supplier_row(sid)
     rows = db.execute(
         "SELECT ct.id,ct.name,ct.full_qty,ct.empty_qty,ct.purchase_price_paise,ct.security_paise,"
         "si.purchase_price_paise AS supplier_price FROM cylinder_types ct "
-        "LEFT JOIN supplier_items si ON si.cylinder_type_id=ct.id AND si.supplier_id=? "
+        "JOIN supplier_items si ON si.cylinder_type_id=ct.id AND si.supplier_id=? "
         "WHERE ct.active=1 ORDER BY ct.sort_order,ct.id", (sid,)
     ).fetchall()
     return jsonify([{
@@ -212,6 +214,11 @@ def purchase_create():
         new_empty = int_field(item.get("new_empty", 0), "New empty cylinders", field=f"new_empty_{tid}")
         if full_in + empty_out + new_empty == 0:
             continue
+        linked = db.execute(
+            "SELECT 1 FROM supplier_items WHERE supplier_id=? AND cylinder_type_id=?", (sid, tid)
+        ).fetchone()
+        if not linked:
+            raise ApiError("This cylinder is not supplied by the selected supplier.", 409, field=f"cylinder_{tid}")
         ct = db.execute("SELECT id,name,empty_qty,purchase_price_paise,security_paise FROM cylinder_types WHERE id=? AND active=1", (tid,)).fetchone()
         if not ct:
             raise ApiError("Cylinder type not found.", 404)
@@ -277,9 +284,17 @@ def purchase_create():
         active_supplier = db.execute("SELECT id FROM suppliers WHERE id=? AND active=1", (sid,)).fetchone()
         if not active_supplier:
             raise ApiError("Supplier not found or no longer active.", 404, field="supplier_id")
-        # Recheck the empty-cylinder stock after taking the write lock. This avoids
-        # two future concurrent requests both returning the same available empties.
+        # Recheck supplier links and empty-cylinder stock after taking the write lock.
+        # This prevents a purchase being saved after a supplier-item link is removed
+        # while the form is open, and avoids concurrent returns of the same empties.
         for item in wanted:
+            linked = db.execute(
+                "SELECT 1 FROM supplier_items WHERE supplier_id=? AND cylinder_type_id=?",
+                (sid, item["id"]),
+            ).fetchone()
+            if not linked:
+                raise ApiError("This cylinder is no longer supplied by the selected supplier.", 409,
+                               field=f"cylinder_{item['id']}")
             current_stock = db.execute(
                 "SELECT empty_qty,name FROM cylinder_types WHERE id=? AND active=1", (item["id"],)
             ).fetchone()

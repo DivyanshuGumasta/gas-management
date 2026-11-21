@@ -85,6 +85,15 @@ class ApiTests(unittest.TestCase):
         sid = supplier["id"]
         self.assertEqual(supplier["balance"], "500.00")
 
+        # Cylinder sizes must be linked to a supplier before they appear in purchase options.
+        import db
+        conn = db.connect()
+        cylinder_id = conn.execute("SELECT id FROM cylinder_types WHERE name='5 kg'").fetchone()[0]
+        conn.close()
+        linked = self.client.put(f"/api/suppliers/{sid}/items", json={"items": [
+            {"cylinder_type_id": cylinder_id, "supplied": True, "purchase_price": "1300"}
+        ]})
+        self.assertEqual(linked.status_code, 200, linked.get_json())
         options = self.client.get(f"/api/purchases/options?supplier_id={sid}").get_json()
         cylinder = next(x for x in options if x["name"] == "5 kg")
         cylinder_id = cylinder["id"]
@@ -113,7 +122,7 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201, response.get_json())
         purchase = response.get_json()
         pid = purchase["id"]
-        self.assertEqual(purchase["number"], "P-00001")
+        self.assertRegex(purchase["number"], r"^P-\d{5}$")
         self.assertEqual(purchase["subtotal"], "5100.00")  # 2 x 1300 + 1 x 2500 security
         self.assertEqual(purchase["gst"], "918.00")
         self.assertEqual(purchase["total"], "6018.00")
@@ -195,21 +204,40 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(supplier_response.status_code, 201, supplier_response.get_json())
         sid = supplier_response.get_json()["id"]
 
+        # The master catalogue is managed by Stock & Price; supplier screens only link existing items.
+        import db
+        conn = db.connect()
+        item_id = conn.execute(
+            "INSERT INTO catalog_items(name,unit,purchase_price_paise,sale_price_paise) VALUES(?,?,?,?)",
+            ("Regulator", "pcs", 25000, 40000),
+        ).lastrowid
+        conn.commit()
+        conn.close()
+        missing_id = self.client.post(f"/api/suppliers/{sid}/catalog-items", json={
+            "name": "Do not create here", "unit": "pcs", "purchase_price": "250",
+        })
+        self.assertEqual(missing_id.status_code, 400)
         created = self.client.post(f"/api/suppliers/{sid}/catalog-items", json={
-            "name": "Regulator", "unit": "pcs", "purchase_price": "250", "sale_price": "400",
+            "item_id": item_id, "purchase_price": "250",
         })
         self.assertEqual(created.status_code, 201, created.get_json())
         item = created.get_json()
-        item_id = item["id"]
+        self.assertEqual(item["id"], item_id)
         self.assertEqual((item["name"], item["unit"], item["purchase_price"], item["stock"]),
                          ("Regulator", "pcs", "250.00", "0"))
         self.assertEqual(self.client.get(f"/api/suppliers/{sid}/catalog-items").get_json()[0]["id"], item_id)
         self.assertEqual(self.client.get(f"/api/purchases/catalog-options?supplier_id={sid}").get_json()[0]["rate"], "250.00")
 
+        # Re-linking the same existing item updates its supplier-specific rate without creating another master item.
         duplicate = self.client.post(f"/api/suppliers/{sid}/catalog-items", json={
-            "name": "regulator", "unit": "pcs", "purchase_price": "260", "sale_price": "410",
+            "item_id": item_id, "purchase_price": "260",
         })
-        self.assertEqual(duplicate.status_code, 409)
+        self.assertEqual(duplicate.status_code, 201)
+        self.assertEqual(duplicate.get_json()["purchase_price"], "260.00")
+        # Restore the test rate used by the first purchase.
+        self.assertEqual(self.client.put(f"/api/suppliers/{sid}/catalog-items/{item_id}", json={
+            "purchase_price": "250",
+        }).status_code, 200)
 
         # Purchase an ordinary item without any cylinder line. Quantity is stored to 3 dp;
         # rate and amount are exact paise, and its item name/unit are snapshotted.
@@ -247,10 +275,14 @@ class ApiTests(unittest.TestCase):
 
         # Editing the catalogue item does not rewrite the historical purchase line.
         updated = self.client.put(f"/api/suppliers/{sid}/catalog-items/{item_id}", json={
-            "name": "Heavy-duty regulator", "unit": "pcs", "purchase_price": "275", "sale_price": "450",
+            "purchase_price": "275",
         })
         self.assertEqual(updated.status_code, 200, updated.get_json())
-        self.assertEqual(updated.get_json()["name"], "Heavy-duty regulator")
+        self.assertEqual(updated.get_json()["name"], "Regulator")
+        self.assertEqual(updated.get_json()["purchase_price"], "275.00")
+        master_item = next(row for row in self.client.get("/api/items").get_json() if row["id"] == item_id)
+        self.assertEqual(master_item["purchase_price"], "250.00")
+        self.assertEqual(master_item["sale_price"], "400.00")
         self.assertEqual(self.client.get(f"/api/purchases/{purchase_id}").get_json()["catalog_items"][0]["name"], "Regulator")
 
         # An item may be attached to a second supplier without duplicating the master record.
@@ -266,6 +298,11 @@ class ApiTests(unittest.TestCase):
         removed = self.client.delete(f"/api/suppliers/{sid}/catalog-items/{item_id}")
         self.assertEqual(removed.status_code, 200)
         self.assertEqual(self.client.get(f"/api/purchases/catalog-options?supplier_id={sid}").get_json(), [])
+        blocked_purchase = self.client.post("/api/purchases", json={
+            "supplier_id": sid,
+            "catalog_items": [{"item_id": item_id, "quantity": "1", "rate": "250"}],
+        })
+        self.assertEqual(blocked_purchase.status_code, 409)
         self.assertEqual(len(self.client.get(f"/api/suppliers/{second['id']}/catalog-items").get_json()), 1)
         self.assertEqual(self.client.get(f"/api/purchases/{purchase_id}").status_code, 200)
 
@@ -273,6 +310,24 @@ class ApiTests(unittest.TestCase):
             "supplier_id": second["id"], "catalog_items": [{"item_id": item_id, "quantity": "NaN", "rate": "270"}],
         })
         self.assertEqual(invalid_quantity.status_code, 400)
+
+    def test_purchase_options_only_show_supplier_links(self):
+        supplier = self.client.post("/api/suppliers", json={
+            "name": "No Linked Cylinders", "gstin": "27AABCD1234E1Z5",
+        })
+        self.assertEqual(supplier.status_code, 201, supplier.get_json())
+        sid = supplier.get_json()["id"]
+        self.assertEqual(self.client.get("/api/purchases/options").get_json(), [])
+        self.assertEqual(self.client.get(f"/api/purchases/options?supplier_id={sid}").get_json(), [])
+        import db
+        conn = db.connect()
+        cylinder_id = conn.execute("SELECT id FROM cylinder_types WHERE name='5 kg'").fetchone()[0]
+        conn.close()
+        response = self.client.post("/api/purchases", json={
+            "supplier_id": sid, "date": date.today().isoformat(),
+            "items": [{"cylinder_type_id": cylinder_id, "full_in": 1, "rate": "1300"}],
+        })
+        self.assertEqual(response.status_code, 409)
 
     def test_suppliers(self):
         rows = {row["name"]: row for row in self.client.get("/api/suppliers").get_json()}

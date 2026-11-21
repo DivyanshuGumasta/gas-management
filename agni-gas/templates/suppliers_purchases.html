@@ -3,66 +3,64 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='css/customers.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/suppliers_purchases.css') }}">
 
-<div class="sp-page-head">
-  <div>
-    <h1 class="page-title">Suppliers &amp; Purchases</h1>
-    <p class="sp-subtitle">Manage suppliers, purchases, stock received and payments in one place.</p>
-  </div>
+<div class="page-head">
+  <h1 class="page-title" id="sp-page-title">Suppliers</h1>
 </div>
 
-<div class="sp-tabs" role="tablist" aria-label="Suppliers and purchases">
-  <button class="sp-tab" id="sp-tab-suppliers" type="button" role="tab" aria-controls="sp-view-suppliers" aria-selected="true" data-tab="suppliers">
-    <i data-icon="truck"></i><span>Suppliers</span>
-  </button>
-  <button class="sp-tab" id="sp-tab-purchases" type="button" role="tab" aria-controls="sp-view-purchases" aria-selected="false" data-tab="purchases">
-    <i data-icon="cart"></i><span>Purchase history</span>
-  </button>
+<div class="tabs" role="tablist" aria-label="Suppliers and purchases">
+  <button class="tab on" id="sp-tab-suppliers" type="button" role="tab" aria-controls="sp-view-suppliers" aria-selected="true" data-tab="suppliers">Suppliers</button>
+  <button class="tab" id="sp-tab-purchases" type="button" role="tab" aria-controls="sp-view-purchases" aria-selected="false" data-tab="purchases">Purchases</button>
 </div>
 
-<div id="sp-error" class="banner banner-error" hidden><span id="sp-error-text"></span><button class="btn btn-ghost btn-sm" id="sp-retry" type="button">Retry</button></div>
+<div id="sp-error" class="banner banner-error" hidden>
+  <span id="sp-error-text"></span>
+  <button class="btn btn-ghost btn-sm" id="sp-retry" type="button">Retry</button>
+</div>
 
-<section id="sp-view-suppliers" class="sp-view" role="tabpanel" aria-labelledby="sp-tab-suppliers">
-  <div class="sp-summary-grid">
-    <article class="sp-summary-card"><small>Suppliers</small><b id="sp-supplier-total">0</b></article>
-    <article class="sp-summary-card"><small>Total payable</small><b class="sp-red" id="sp-supplier-payable">Rs 0</b></article>
-    <article class="sp-summary-card"><small>Supplier advances</small><b class="sp-green" id="sp-supplier-advance">Rs 0</b></article>
+<section id="sp-view-suppliers" role="tabpanel" aria-labelledby="sp-tab-suppliers">
+  <div class="toolbar">
+    <label class="search"><i data-icon="search"></i><input type="search" id="sp-supplier-search" placeholder="Search name, GSTIN, phone or address" autocomplete="off"></label>
+    <div class="head-actions">
+      <div class="menu-wrap" data-scope="suppliers">
+        <button class="btn btn-white" data-menu-toggle type="button"><i data-cicon="download"></i>Export<i data-cicon="chevronDown"></i></button>
+        <div class="menu" hidden><button type="button" data-export="pdf">Download PDF</button><button type="button" data-export="excel">Download Excel</button></div>
+      </div>
+      <button class="btn btn-dark" id="sp-add-supplier" type="button"><i data-icon="userPlus"></i>Add supplier</button>
+    </div>
   </div>
-  <div class="sp-toolbar">
-    <label class="search sp-search"><i data-icon="search"></i><input type="search" id="sp-supplier-search" placeholder="Search supplier name, GSTIN, phone or address" autocomplete="off"></label>
-    <div class="sp-toolbar-actions"><span class="sp-count" id="sp-supplier-count">Loading suppliers…</span><button class="btn btn-white" id="sp-export-suppliers" type="button">Export CSV</button><button class="btn btn-dark" id="sp-add-supplier" type="button"><i data-icon="userPlus"></i>Add supplier</button></div>
-  </div>
-  <div class="sp-list-card" id="sp-supplier-list" aria-live="polite"><div class="sp-state">Loading suppliers…</div></div>
+  <div class="list-card" id="sp-supplier-list" aria-live="polite"><div class="state">Loading suppliers…</div></div>
 </section>
 
-<section id="sp-view-purchases" class="sp-view" role="tabpanel" aria-labelledby="sp-tab-purchases" hidden>
-  <div class="sp-summary-grid sp-summary-two">
-    <article class="sp-summary-card"><small>Purchases in selected period</small><b id="sp-purchase-total">Rs 0</b><span id="sp-purchase-count">0 records</span></article>
-    <article class="sp-summary-card"><small>Total payable to suppliers</small><b class="sp-red" id="sp-purchase-payable">Rs 0</b><span>Current outstanding balance</span></article>
-  </div>
-  <div class="sp-toolbar sp-purchase-toolbar">
-    <div class="sp-filter-wrap">
-      <div class="sp-filter-chips" aria-label="Purchase date filters">
-        <button class="sp-chip" data-period="today" type="button">Today</button>
-        <button class="sp-chip" data-period="7d" type="button">Last 7 days</button>
-        <button class="sp-chip on" data-period="month" type="button">This month</button>
-        <button class="sp-chip" data-period="all" type="button">All</button>
-        <button class="sp-chip" data-period="custom" type="button">Custom</button>
-      </div>
-      <div class="sp-custom-dates" id="sp-custom-dates" hidden>
-        <label>From <input type="date" id="sp-from"></label>
-        <label>To <input type="date" id="sp-to"></label>
-      </div>
+<section id="sp-view-purchases" role="tabpanel" aria-labelledby="sp-tab-purchases" hidden>
+  <div class="toolbar">
+    <div class="chips" id="sp-periods" aria-label="Purchase date filters">
+      <button class="chip" data-period="today" type="button">Today</button>
+      <button class="chip" data-period="7d" type="button">Last 7 days</button>
+      <button class="chip on" data-period="month" type="button">This month</button>
+      <button class="chip" data-period="all" type="button">All</button>
+      <button class="chip" data-period="custom" type="button">Custom</button>
     </div>
-    <div class="sp-toolbar-actions"><button class="btn btn-white" id="sp-export-purchases" type="button">Export CSV</button><button class="btn btn-dark" id="sp-new-purchase" type="button"><i data-icon="plus"></i>New purchase</button></div>
+    <div class="head-actions">
+      <div class="menu-wrap" data-scope="purchases">
+        <button class="btn btn-white" data-menu-toggle type="button"><i data-cicon="download"></i>Export<i data-cicon="chevronDown"></i></button>
+        <div class="menu" hidden><button type="button" data-export="pdf">Download PDF</button><button type="button" data-export="excel">Download Excel</button></div>
+      </div>
+      <a class="btn btn-dark" href="/purchases/new"><i data-icon="plus"></i>New purchase</a>
+    </div>
   </div>
-  <div class="sp-toolbar sp-list-tools">
-    <label class="search sp-search"><i data-icon="search"></i><input type="search" id="sp-purchase-search" placeholder="Search purchase number or supplier" autocomplete="off"></label>
+  <div class="toolbar sp-date-toolbar" id="sp-custom-dates" hidden>
+    <div class="date-filter"><span>From</span><input type="date" id="sp-from"><span>To</span><input type="date" id="sp-to"></div>
   </div>
-  <div class="sp-list-card" id="sp-purchase-list" aria-live="polite"><div class="sp-state">Loading purchases…</div></div>
+  <div class="sum-grid">
+    <div class="sum-card"><div class="label">Purchases</div><div class="value" id="sp-purchase-total">Rs 0</div><small id="sp-purchase-count">0 bills</small></div>
+    <div class="sum-card"><div class="label">Payable</div><div class="value red" id="sp-purchase-payable">Rs 0</div></div>
+  </div>
+  <div class="list-card" id="sp-purchase-list" aria-live="polite"><div class="state">Loading purchases…</div></div>
 </section>
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/customers_common.js') }}"></script>
 <script src="{{ url_for('static', filename='js/suppliers_common.js') }}"></script>
 <script src="{{ url_for('static', filename='js/suppliers_purchases.js') }}"></script>
 {% endblock %}

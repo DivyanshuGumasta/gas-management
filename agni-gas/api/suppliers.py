@@ -315,9 +315,6 @@ def supplier_payment_cancel(pid):
     return jsonify({"ok": True})
 
 # ---------------------------------------------------------------- general catalogue items (non-cylinder goods)
-ITEM_UNITS = {"pcs", "kg", "g", "litre", "ml", "packet", "box", "set", "metre", "pair"}
-
-
 def _catalog_item_dict(row, supplier_price=None):
     stock_milli = row["stock_qty_milli"]
     from .util import quantity_from_milli
@@ -335,15 +332,6 @@ def _catalog_item_dict(row, supplier_price=None):
         "active": bool(row["active"]),
     }
 
-
-def _catalog_fields(data):
-    name = text(data, "name", "Item name", required=True, max_len=100)
-    unit = str(data.get("unit", "pcs") or "pcs").strip().lower()
-    if unit not in ITEM_UNITS:
-        raise ApiError("Choose a supported item unit.", field="unit")
-    purchase_price = money_field(data, "purchase_price", "Purchase price", allow_zero=False)
-    sale_price = money_field(data, "sale_price", "Sale price", allow_zero=True)
-    return name, unit, purchase_price, sale_price
 
 
 @api_bp.get("/items")
@@ -374,44 +362,34 @@ def supplier_catalog_items_get(sid):
 
 @api_bp.post("/suppliers/<int:sid>/catalog-items")
 def supplier_catalog_item_add(sid):
+    """Link an existing Stock & Price catalogue item to this supplier."""
     data = body()
     db = get_db()
     supplier_row(sid)
-
     existing_id = data.get("item_id")
-    if existing_id not in (None, ""):
-        item_id = int_field(existing_id, "Item", minimum=1)
-        item = db.execute("SELECT * FROM catalog_items WHERE id=? AND active=1", (item_id,)).fetchone()
-        if not item:
-            raise ApiError("Catalogue item not found.", 404)
-        price_raw = data.get("purchase_price")
-        supplier_price = (money_field(data, "purchase_price", "Supplier purchase price", allow_zero=False)
-                          if price_raw not in (None, "") else item["purchase_price_paise"])
-        with transaction(db):
-            db.execute(
-                "INSERT INTO supplier_catalog_items(supplier_id,item_id,purchase_price_paise,active) "
-                "VALUES(?,?,?,1) ON CONFLICT(supplier_id,item_id) DO UPDATE SET "
-                "purchase_price_paise=excluded.purchase_price_paise,active=1",
-                (sid, item_id, supplier_price),
-            )
-    else:
-        name, unit, purchase_price, sale_price = _catalog_fields(data)
-        duplicate = db.execute("SELECT id FROM catalog_items WHERE name=? COLLATE NOCASE", (name,)).fetchone()
-        if duplicate:
-            raise ApiError("This item already exists. Choose it from the existing-item list instead.", 409, field="name")
-        with transaction(db):
-            item_id = db.execute(
-                "INSERT INTO catalog_items(name,unit,purchase_price_paise,sale_price_paise) VALUES(?,?,?,?)",
-                (name, unit, purchase_price, sale_price),
-            ).lastrowid
-            db.execute(
-                "INSERT INTO supplier_catalog_items(supplier_id,item_id,purchase_price_paise,active) VALUES(?,?,?,1)",
-                (sid, item_id, purchase_price),
-            )
-
+    if existing_id in (None, ""):
+        raise ApiError(
+            "Choose an item from Stock & Price. New items are created there.",
+            400, field="item_id",
+        )
+    item_id = int_field(existing_id, "Item", minimum=1)
+    item = db.execute("SELECT * FROM catalog_items WHERE id=? AND active=1", (item_id,)).fetchone()
+    if not item:
+        raise ApiError("Catalogue item not found.", 404)
+    price_raw = data.get("purchase_price")
+    supplier_price = (money_field(data, "purchase_price", "Supplier purchase price", allow_zero=False)
+                      if price_raw not in (None, "") else item["purchase_price_paise"])
+    with transaction(db):
+        db.execute(
+            "INSERT INTO supplier_catalog_items(supplier_id,item_id,purchase_price_paise,active) "
+            "VALUES(?,?,?,1) ON CONFLICT(supplier_id,item_id) DO UPDATE SET "
+            "purchase_price_paise=excluded.purchase_price_paise,active=1",
+            (sid, item_id, supplier_price),
+        )
     row = db.execute(
         "SELECT i.*,si.purchase_price_paise AS supplier_price FROM catalog_items i "
-        "JOIN supplier_catalog_items si ON si.item_id=i.id WHERE i.id=? AND si.supplier_id=? AND si.active=1",
+        "JOIN supplier_catalog_items si ON si.item_id=i.id "
+        "WHERE i.id=? AND si.supplier_id=? AND si.active=1",
         (item_id, sid),
     ).fetchone()
     return jsonify(_catalog_item_dict(row, row["supplier_price"])), 201
@@ -419,6 +397,7 @@ def supplier_catalog_item_add(sid):
 
 @api_bp.put("/suppliers/<int:sid>/catalog-items/<int:item_id>")
 def supplier_catalog_item_update(sid, item_id):
+    """Edit only this supplier's rate; item name/unit/sale price belong to Stock & Price."""
     data = body()
     db = get_db()
     supplier_row(sid)
@@ -428,24 +407,16 @@ def supplier_catalog_item_update(sid, item_id):
     item = db.execute("SELECT id FROM catalog_items WHERE id=? AND active=1", (item_id,)).fetchone()
     if not association or not association["active"] or not item:
         raise ApiError("This item is not currently linked to the supplier.", 404)
-    name, unit, purchase_price, sale_price = _catalog_fields(data)
-    duplicate = db.execute(
-        "SELECT id FROM catalog_items WHERE name=? COLLATE NOCASE AND id<>?", (name, item_id)
-    ).fetchone()
-    if duplicate:
-        raise ApiError("Another catalogue item already uses this name.", 409, field="name")
+    purchase_price = money_field(data, "purchase_price", "Supplier purchase price", allow_zero=False)
     with transaction(db):
-        db.execute(
-            "UPDATE catalog_items SET name=?,unit=?,purchase_price_paise=?,sale_price_paise=? WHERE id=?",
-            (name, unit, purchase_price, sale_price, item_id),
-        )
         db.execute(
             "UPDATE supplier_catalog_items SET purchase_price_paise=? WHERE supplier_id=? AND item_id=?",
             (purchase_price, sid, item_id),
         )
     row = db.execute(
         "SELECT i.*,si.purchase_price_paise AS supplier_price FROM catalog_items i "
-        "JOIN supplier_catalog_items si ON si.item_id=i.id WHERE i.id=? AND si.supplier_id=?",
+        "JOIN supplier_catalog_items si ON si.item_id=i.id "
+        "WHERE i.id=? AND si.supplier_id=? AND si.active=1",
         (item_id, sid),
     ).fetchone()
     return jsonify(_catalog_item_dict(row, row["supplier_price"]))
