@@ -213,6 +213,9 @@ def purchase_create():
         full_in = int_field(item.get("full_in", 0), "Full cylinders received", field=f"full_{tid}")
         empty_out = int_field(item.get("empty_out", 0), "Empty cylinders returned", field=f"empty_{tid}")
         new_empty = int_field(item.get("new_empty", 0), "New empty cylinders", field=f"new_empty_{tid}")
+        new_full = int_field(item.get("new_full", 0), "New full cylinders", field=f"new_full_{tid}")
+        if new_full > full_in:
+            raise ApiError("New full cylinders cannot be more than the full cylinders received.", field=f"new_full_{tid}")
         if full_in + empty_out + new_empty == 0:
             continue
         linked = db.execute(
@@ -228,11 +231,15 @@ def purchase_create():
         rate = money_field(item, "rate", "Purchase rate", allow_zero=(full_in == 0))
         if full_in and rate <= 0:
             raise ApiError(f"Enter a purchase rate for {ct['name']}.", field=f"rate_{tid}")
-        security_rate = ct["security_paise"]
-        amount = full_in * rate + new_empty * security_rate
+        # Deposit is editable per purchase line. Falls back to the saved deposit if not sent.
+        if item.get("deposit") in (None, ""):
+            security_rate = ct["security_paise"]
+        else:
+            security_rate = money_field(item, "deposit", "Deposit", allow_zero=True)
+        amount = full_in * rate + (new_full + new_empty) * security_rate
         subtotal += amount
         wanted.append({"id":tid,"name":ct["name"],"full_in":full_in,"empty_out":empty_out,
-                       "new_empty":new_empty,"rate":rate,"security_rate":security_rate,"amount":amount})
+                       "new_empty":new_empty,"new_full":new_full,"rate":rate,"security_rate":security_rate,"amount":amount})
     seen_catalog = set()
     for item in catalog_items:
         if not isinstance(item, dict):
@@ -311,9 +318,9 @@ def purchase_create():
         ).lastrowid
         for item in wanted:
             db.execute(
-                "INSERT INTO purchase_items(purchase_id,cylinder_type_id,full_in_qty,empty_out_qty,new_empty_qty,rate_paise,security_rate_paise,amount_paise) "
-                "VALUES(?,?,?,?,?,?,?,?)",
-                (pid,item["id"],item["full_in"],item["empty_out"],item["new_empty"],item["rate"],item["security_rate"],item["amount"]),
+                "INSERT INTO purchase_items(purchase_id,cylinder_type_id,full_in_qty,empty_out_qty,new_empty_qty,new_full_qty,rate_paise,security_rate_paise,amount_paise) "
+                "VALUES(?,?,?,?,?,?,?,?,?)",
+                (pid,item["id"],item["full_in"],item["empty_out"],item["new_empty"],item["new_full"],item["rate"],item["security_rate"],item["amount"]),
             )
             db.execute(
                 "UPDATE cylinder_types SET full_qty=full_qty+?, empty_qty=empty_qty-?+? WHERE id=?",
@@ -330,6 +337,8 @@ def purchase_create():
                     (sid,item["id"],item["rate"]),
                 )
                 db.execute("UPDATE cylinder_types SET purchase_price_paise=? WHERE id=?", (item["rate"],item["id"]))
+            if update_prices and (item["new_full"] or item["new_empty"]):
+                db.execute("UPDATE cylinder_types SET security_paise=? WHERE id=?", (item["security_rate"],item["id"]))
         for item in wanted_catalog:
             # Verify the supplier-item link still exists while holding the write lock.
             link = db.execute(
@@ -386,7 +395,7 @@ def purchase_get(pid):
     result = _purchase_payload(row)
     result.update({
         "items": [{"cylinder_type_id":i["cylinder_type_id"],"name":i["name"],"full_in":i["full_in_qty"],
-                   "empty_out":i["empty_out_qty"],"new_empty":i["new_empty_qty"],
+                   "empty_out":i["empty_out_qty"],"new_empty":i["new_empty_qty"],"new_full":i["new_full_qty"],
                    "rate":to_rupees(i["rate_paise"]),"security_rate":to_rupees(i["security_rate_paise"]),
                    "amount":to_rupees(i["amount_paise"])} for i in items],
         "catalog_items": [{"item_id":i["item_id"],"name":i["item_name"],"unit":i["unit"],

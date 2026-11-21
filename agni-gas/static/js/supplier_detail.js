@@ -281,7 +281,7 @@
             (itemsCache.length ? '<div class="sd-cylinder-list">' + itemsCache.map((it) =>
               '<div class="sd-cylinder-row" data-cylinder-row="' + it.cylinder_type_id + '">' +
                 '<span class="sd-cylinder-icon">▣</span>' +
-                '<span class="sd-catalog-main"><b>' + esc(it.name) + '</b><small>Security price: ' + esc(fmt.money(it.security_price)) + '</small></span>' +
+                '<span class="sd-catalog-main"><b>' + esc(it.name) + '</b><small>Deposit: ' + esc(fmt.money(it.security_price)) + ' · Selling price: ' + esc(fmt.money(it.sale_price)) + '</small></span>' +
                 '<span class="sd-catalog-price"><small>Supplier purchase rate</small><b>' + esc(fmt.money(it.purchase_price)) + '</b></span>' +
                 '<span class="sd-catalog-actions"><button class="btn btn-white btn-sm" type="button" data-edit-cylinder="' + it.cylinder_type_id + '">Edit</button>' +
                 '<button class="link-btn" type="button" data-remove-cylinder="' + it.cylinder_type_id + '">Remove</button></span>' +

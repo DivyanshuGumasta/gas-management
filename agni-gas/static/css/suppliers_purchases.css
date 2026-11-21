@@ -242,3 +242,9 @@
   .pd-attachment-panel { padding:13px; }
   .pd-pdf-wrap iframe { height:450px; }
 }
+
+.pn-qty-line small { display: block; font-size: 11px; font-weight: 400; color: var(--muted); }
+.pn-qty-line > div > b { font-size: 12px; }
+.pn-note-empty { margin: 0 0 8px; font-size: 12px; color: var(--red); }
+
+.pn-deposit { width:118px; flex:none; }

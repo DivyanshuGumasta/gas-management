@@ -168,6 +168,7 @@ CREATE TABLE IF NOT EXISTS purchase_items (
     full_in_qty           INTEGER NOT NULL DEFAULT 0,
     empty_out_qty         INTEGER NOT NULL DEFAULT 0,
     new_empty_qty         INTEGER NOT NULL DEFAULT 0,
+    new_full_qty          INTEGER NOT NULL DEFAULT 0,
     rate_paise            INTEGER NOT NULL DEFAULT 0,
     security_rate_paise   INTEGER NOT NULL DEFAULT 0,
     amount_paise          INTEGER NOT NULL DEFAULT 0

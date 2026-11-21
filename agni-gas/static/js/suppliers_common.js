@@ -430,6 +430,9 @@
       '<form novalidate>' +
       '<label class="field"><span>Cylinder weight (kg) *</span><input class="input" name="weight_kg" type="number" min="0.1" max="1000" step="0.001" inputmode="decimal" placeholder="e.g. 5.4" required><small class="hint">Enter the actual cylinder weight. Decimal weights such as 5.4 kg are supported.</small></label>' +
       '<label class="field"><span>Purchase price from this supplier *</span><div class="amt"><i>Rs</i><input name="purchase_price" inputmode="decimal" autocomplete="off" placeholder="0"></div></label>' +
+      '<label class="field"><span>Deposit (per new cylinder)</span><div class="amt"><i>Rs</i><input name="deposit" inputmode="decimal" autocomplete="off" placeholder="0"></div></label>' +
+      '<label class="field"><span>Selling price</span><div class="amt"><i>Rs</i><input name="sale_price" inputmode="decimal" autocomplete="off" placeholder="0"></div></label>' +
+      '<small class="hint">Deposit and selling price belong to the cylinder size. Leave them blank to keep what is already saved for this size.</small>' +
       (editing ? '<p class="hint-text">Changing the weight moves this supplier to the matching cylinder size. Past purchases and stock records keep their original cylinder type.</p>' : '') +
       '<div class="form-error" role="alert"></div>' +
       '<div class="modal-foot"><button class="btn btn-white" type="button" data-close>Cancel</button><button class="btn btn-dark" type="submit">' + (editing ? 'Save cylinder' : 'Add cylinder') + '</button></div></form>';
@@ -439,6 +442,8 @@
     if (editing) {
       q("weight_kg").value = item.weight_kg == null ? "" : String(item.weight_kg);
       q("purchase_price").value = item.purchase_price || "";
+      q("deposit").value = item.security_price && Number(item.security_price) ? item.security_price : "";
+      q("sale_price").value = item.sale_price && Number(item.sale_price) ? item.sale_price : "";
     }
     let saving = false;
     form.addEventListener("submit", async (event) => {
@@ -450,7 +455,7 @@
       if (!(Number(weight) >= 0.1 && Number(weight) <= 1000)) { error.textContent = "Enter a valid cylinder weight in kg."; q("weight_kg").focus(); return; }
       if (!(Number(price) > 0)) { error.textContent = "Enter a purchase price greater than zero."; q("purchase_price").focus(); return; }
       const url = editing ? "/api/suppliers/" + supplierId + "/items/" + item.cylinder_type_id : "/api/suppliers/" + supplierId + "/items";
-      const payload = { weight_kg: weight, purchase_price: price };
+      const payload = { weight_kg: weight, purchase_price: price, deposit: q("deposit").value.trim(), sale_price: q("sale_price").value.trim() };
       saving = true; saveButton.disabled = true;
       try {
         if (editing) await Api.put(url, payload); else await Api.post(url, payload);

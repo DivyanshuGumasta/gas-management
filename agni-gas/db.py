@@ -35,6 +35,10 @@ def init_db(path: str | None = None) -> None:
     try:
         with open(resource_path("schema.sql"), encoding="utf-8") as f:
             conn.executescript(f.read())
+        # v0.3.7: brand-new full cylinders are stored separately from refills.
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(purchase_items)")]
+        if "new_full_qty" not in cols:
+            conn.execute("ALTER TABLE purchase_items ADD COLUMN new_full_qty INTEGER NOT NULL DEFAULT 0")
         if conn.execute("SELECT COUNT(*) FROM cylinder_types").fetchone()[0] == 0:
             for i, (name, kg, sale, whole, buy, sec) in enumerate(DEFAULT_CYLINDERS):
                 conn.execute(

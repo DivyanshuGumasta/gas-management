@@ -413,10 +413,13 @@
       '<div class="pn-item-head"><span class="pn-cylinder-icon">▣</span><div class="pn-item-title"><b>' + esc(item.name) + '</b>' +
         '<small>Full: ' + item.full_stock + ' · Empty: ' + item.empty_stock + '</small></div>' +
         '<label class="pn-rate"><small>Rate</small><span><i>Rs</i><input type="number" min="0" step="0.01" value="' + esc(item.rate) + '" data-rate></span></label></div>' +
-      '<div class="pn-qty-line"><b>Full in</b>' + stepper('full', 0) + '</div>' +
-      '<div class="pn-qty-line"><b>Empty out</b>' + stepper('empty', 0, item.empty_stock) + '</div>' +
-      '<button class="pn-bought-toggle" type="button" data-toggle-new-empty>＋ Bought new empty cylinders?</button>' +
-      '<div class="pn-new-empty" data-new-empty-wrap hidden><div><b>New empty</b><small>Security: ' + esc(fmt.money(item.security_rate)) + '</small></div>' + stepper('new-empty', 0) + '</div>' +
+      '<div class="pn-qty-line"><div><b>Deposit</b><small>Per new cylinder. You can change it</small></div>' +
+        '<label class="pn-rate pn-deposit"><span><i>Rs</i><input type="number" min="0" step="0.01" value="' + esc(item.security_rate) + '" data-deposit></span></label></div>' +
+      '<div class="pn-qty-line"><div><b>Refill</b><small>Empty back, full in</small></div>' + stepper('refill', 0, item.empty_stock) + '</div>' +
+      '<div class="pn-qty-line"><div><b>New full cylinder</b><small>Brand-new and filled (rate + deposit)</small></div>' + stepper('new-full', 0) + '</div>' +
+      '<div class="pn-qty-line"><div><b>New empty cylinder</b><small>Brand-new and empty (deposit only)</small></div>' + stepper('new-empty', 0) + '</div>' +
+      '<div class="pn-qty-line"><div><b>Return cylinder</b><small>Empty back only</small></div>' + stepper('return', 0, item.empty_stock) + '</div>' +
+      (Number(item.empty_stock) <= 0 ? '<p class="pn-note-empty">No empty cylinders in stock, so Refill and Return are not available.</p>' : '') +
       '<div class="pn-item-footer"><span>Amount</span><b data-line-total>Rs 0</b></div></article>';
   }
 
@@ -536,16 +539,23 @@
       const item = state.cylinders.find((row) => row.id === Number(card.dataset.item));
       if (!item) return;
       const rateCents = cents(card.querySelector("[data-rate]").value);
-      const full = value(card.querySelector("[data-full]"));
-      const empty = value(card.querySelector("[data-empty]"));
+      const refill = value(card.querySelector("[data-refill]"));
+      const newFull = value(card.querySelector("[data-new-full]"));
       const newEmpty = value(card.querySelector("[data-new-empty]"));
-      const securityCents = cents(item.security_rate);
-      const lineCents = full * rateCents + newEmpty * securityCents;
+      const ret = value(card.querySelector("[data-return]"));
+      const depositInput = card.querySelector("[data-deposit]");
+      const depositCents = cents(depositInput.value);
+      // Every full cylinder costs the rate. A brand-new cylinder (full or empty) also costs the deposit.
+      const lineCents = (refill + newFull) * rateCents + (newFull + newEmpty) * depositCents;
       subtotalCents += lineCents;
       card.querySelector("[data-line-total]").textContent = moneyFromCents(lineCents);
-      const emptyInput = card.querySelector("[data-empty]");
-      emptyInput.max = item.empty_stock;
-      emptyInput.classList.toggle("invalid", empty > item.empty_stock);
+      // Refill and Return both send empties back, so together they cannot exceed the empties in stock.
+      const refillInput = card.querySelector("[data-refill]");
+      const returnInput = card.querySelector("[data-return]");
+      refillInput.max = Math.max(0, item.empty_stock - ret);
+      returnInput.max = Math.max(0, item.empty_stock - refill);
+      refillInput.classList.toggle("invalid", refill + ret > item.empty_stock);
+      returnInput.classList.toggle("invalid", refill + ret > item.empty_stock);
     });
     $("pn-catalog-lines").querySelectorAll("[data-catalog-row]").forEach((row) => {
       const itemId = Number(row.dataset.catalogRow) || 0;
@@ -591,12 +601,18 @@
     $("pn-items").querySelectorAll("[data-item]").forEach((card) => {
       const item = state.cylinders.find((row) => row.id === Number(card.dataset.item));
       if (!item) return;
-      const full = Math.floor(value(card.querySelector("[data-full]")));
-      const empty = Math.floor(value(card.querySelector("[data-empty]")));
+      const refill = Math.floor(value(card.querySelector("[data-refill]")));
+      const newFull = Math.floor(value(card.querySelector("[data-new-full]")));
       const newEmpty = Math.floor(value(card.querySelector("[data-new-empty]")));
-      if (!full && !empty && !newEmpty) return;
-      result.push({ cylinder_type_id: item.id, full_in: full, empty_out: empty, new_empty: newEmpty,
-        rate: card.querySelector("[data-rate]").value.trim() || "0" });
+      const ret = Math.floor(value(card.querySelector("[data-return]")));
+      if (!refill && !newFull && !newEmpty && !ret) return;
+      if (refill + ret > item.empty_stock) {
+        throw new Error(item.name + ": Refill + Return is " + (refill + ret) + ", but only " + item.empty_stock + " empty cylinders are in stock.");
+      }
+      // Same API as before: a refill is one full in + one empty out, behind the scenes.
+      result.push({ cylinder_type_id: item.id, full_in: refill + newFull, new_full: newFull, empty_out: refill + ret, new_empty: newEmpty,
+        rate: card.querySelector("[data-rate]").value.trim() || "0",
+        deposit: card.querySelector("[data-deposit]").value.trim() || "0" });
     });
     return result;
   }
@@ -630,14 +646,6 @@
     });
   });
   $("pn-items").addEventListener("click", (event) => {
-    const toggle = event.target.closest("[data-toggle-new-empty]");
-    if (toggle) {
-      const card = toggle.closest("[data-item]");
-      const wrap = card.querySelector("[data-new-empty-wrap]");
-      wrap.hidden = !wrap.hidden;
-      toggle.classList.toggle("on", !wrap.hidden);
-      return;
-    }
     const step = event.target.closest("[data-step]");
     if (!step) return;
     const card = step.closest("[data-item]");
@@ -665,9 +673,8 @@
     event.preventDefault();
     showError("");
     if (!state.supplier) { showError("Select a supplier before saving the purchase."); return; }
-    const items = collectCylinderItems();
-    let catalogItems;
-    try { catalogItems = collectCatalogItems(); }
+    let items, catalogItems;
+    try { items = collectCylinderItems(); catalogItems = collectCatalogItems(); }
     catch (err) { showError(err.message); return; }
     if (!items.length && !catalogItems.length) { showError("Enter at least one quantity before saving."); return; }
     const status = $("pn-payment-status").value;

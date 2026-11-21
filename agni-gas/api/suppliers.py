@@ -732,7 +732,7 @@ def supplier_items_get(sid):
     """Return only cylinder types currently supplied by this supplier."""
     supplier_row(sid, include_inactive=True)
     rows = get_db().execute(
-        "SELECT ct.id,ct.name,ct.kg,ct.purchase_price_paise AS default_price,ct.security_paise,"
+        "SELECT ct.id,ct.name,ct.kg,ct.purchase_price_paise AS default_price,ct.security_paise,ct.sale_price_paise,"
         "si.purchase_price_paise AS supplier_price "
         "FROM supplier_items si JOIN cylinder_types ct ON ct.id=si.cylinder_type_id "
         "WHERE si.supplier_id=? AND ct.active=1 ORDER BY ct.sort_order,ct.id", (sid,)
@@ -747,6 +747,7 @@ def _supplier_cylinder_dict(row):
         "purchase_price": to_rupees(row["supplier_price"]),
         "default_purchase_price": to_rupees(row["default_price"]),
         "security_price": to_rupees(row["security_paise"]),
+        "sale_price": to_rupees(row["sale_price_paise"]),
         "weight_kg": row["kg"],
     }
 
@@ -756,7 +757,7 @@ def supplier_available_cylinders(sid):
     """Active cylinder types not yet linked to this supplier."""
     supplier_row(sid)
     rows = get_db().execute(
-        "SELECT ct.id,ct.name,ct.kg,ct.purchase_price_paise AS default_price,ct.security_paise "
+        "SELECT ct.id,ct.name,ct.kg,ct.purchase_price_paise AS default_price,ct.security_paise,ct.sale_price_paise "
         "FROM cylinder_types ct LEFT JOIN supplier_items si "
         "ON si.cylinder_type_id=ct.id AND si.supplier_id=? "
         "WHERE ct.active=1 AND si.supplier_id IS NULL ORDER BY ct.sort_order,ct.id", (sid,)
@@ -766,7 +767,22 @@ def supplier_available_cylinders(sid):
         "name": row["name"],
         "purchase_price": to_rupees(row["default_price"]),
         "security_price": to_rupees(row["security_paise"]),
+        "sale_price": to_rupees(row["sale_price_paise"]),
     } for row in rows])
+
+
+def _optional_money(data, key, label):
+    """Paise, or None when the field was left blank (meaning: keep the saved value)."""
+    if data.get(key) in (None, ""):
+        return None
+    return money_field(data, key, label, allow_zero=True)
+
+
+def _apply_cylinder_prices(db, tid, deposit, sale_price):
+    if deposit is not None:
+        db.execute("UPDATE cylinder_types SET security_paise=? WHERE id=?", (deposit, tid))
+    if sale_price is not None:
+        db.execute("UPDATE cylinder_types SET sale_price_paise=? WHERE id=?", (sale_price, tid))
 
 
 @api_bp.post("/suppliers/<int:sid>/items")
@@ -784,6 +800,8 @@ def supplier_cylinder_link(sid):
     weight = round(weight, 3)
     label = f"{weight:g} kg"
     price = money_field(data, "purchase_price", "Supplier purchase price", allow_zero=False)
+    deposit = _optional_money(data, "deposit", "Deposit")
+    sale_price = _optional_money(data, "sale_price", "Selling price")
     db = get_db()
     with transaction(db):
         cylinder = db.execute(
@@ -797,13 +815,14 @@ def supplier_cylinder_link(sid):
             tid = db.execute(
                 "INSERT INTO cylinder_types(name,kg,sort_order) VALUES(?,?,?)", (label, weight, sort_order)
             ).lastrowid
+        _apply_cylinder_prices(db, tid, deposit, sale_price)
         db.execute(
             "INSERT INTO supplier_items(supplier_id,cylinder_type_id,purchase_price_paise) VALUES(?,?,?) "
             "ON CONFLICT(supplier_id,cylinder_type_id) DO UPDATE SET purchase_price_paise=excluded.purchase_price_paise",
             (sid, tid, price),
         )
     row = db.execute(
-        "SELECT ct.id,ct.name,ct.kg,ct.purchase_price_paise AS default_price,ct.security_paise,"
+        "SELECT ct.id,ct.name,ct.kg,ct.purchase_price_paise AS default_price,ct.security_paise,ct.sale_price_paise,"
         "si.purchase_price_paise AS supplier_price FROM supplier_items si "
         "JOIN cylinder_types ct ON ct.id=si.cylinder_type_id "
         "WHERE si.supplier_id=? AND si.cylinder_type_id=?", (sid, tid)
@@ -831,6 +850,8 @@ def supplier_cylinder_price_update(sid, tid):
     if not (0.1 <= weight <= 1000):
         raise ApiError("Cylinder weight must be between 0.1 and 1000 kg.", 400, field="weight_kg")
     label = f"{weight:g} kg"
+    deposit = _optional_money(data, "deposit", "Deposit")
+    sale_price = _optional_money(data, "sale_price", "Selling price")
     with transaction(db):
         current = db.execute("SELECT kg FROM cylinder_types WHERE id=?", (tid,)).fetchone()
         if not current:
@@ -855,13 +876,14 @@ def supplier_cylinder_price_update(sid, tid):
             if already:
                 raise ApiError("This supplier already has that cylinder weight. Edit its existing entry instead.", 409)
             db.execute("DELETE FROM supplier_items WHERE supplier_id=? AND cylinder_type_id=?", (sid, tid))
+        _apply_cylinder_prices(db, target_id, deposit, sale_price)
         db.execute(
             "INSERT INTO supplier_items(supplier_id,cylinder_type_id,purchase_price_paise) VALUES(?,?,?) "
             "ON CONFLICT(supplier_id,cylinder_type_id) DO UPDATE SET purchase_price_paise=excluded.purchase_price_paise",
             (sid, target_id, price),
         )
     row = db.execute(
-        "SELECT ct.id,ct.name,ct.kg,ct.purchase_price_paise AS default_price,ct.security_paise,"
+        "SELECT ct.id,ct.name,ct.kg,ct.purchase_price_paise AS default_price,ct.security_paise,ct.sale_price_paise,"
         "si.purchase_price_paise AS supplier_price FROM supplier_items si "
         "JOIN cylinder_types ct ON ct.id=si.cylinder_type_id "
         "WHERE si.supplier_id=? AND si.cylinder_type_id=?", (sid, target_id)
@@ -922,7 +944,7 @@ def supplier_items_save(sid):
 
 def supplier_items_get_data(db, sid):
     rows = db.execute(
-        "SELECT ct.id,ct.name,ct.kg,ct.purchase_price_paise AS default_price,ct.security_paise,"
+        "SELECT ct.id,ct.name,ct.kg,ct.purchase_price_paise AS default_price,ct.security_paise,ct.sale_price_paise,"
         "si.purchase_price_paise AS supplier_price FROM supplier_items si "
         "JOIN cylinder_types ct ON ct.id=si.cylinder_type_id "
         "WHERE si.supplier_id=? AND ct.active=1 ORDER BY ct.sort_order,ct.id", (sid,)

@@ -54,12 +54,13 @@
       $("pd-date").textContent = purchase.date;
 
       const cylinders = (purchase.items || []).map((item) =>
-        '<tr><td><b>' + esc(item.name) + '</b><small class="sub">Cylinder · full rate ' + money(item.rate) + ' · empty security rate ' + money(item.security_rate) + '</small></td>' +
-        '<td class="num">' + item.full_in + '</td><td class="num">' + item.empty_out + '</td><td class="num">' + item.new_empty + '</td><td class="num">' + money(item.rate) + '</td><td class="num">' + money(item.amount) + '</td></tr>'
+        '<tr><td><b>' + esc(item.name) + '</b><small class="sub">Cylinder · rate ' + money(item.rate) + ' · deposit ' + money(item.security_rate) + '</small></td>' +
+        '<td class="num">' + (item.full_in - (item.new_full || 0)) + '</td><td class="num">' + (item.new_full || 0) + '</td><td class="num">' + item.new_empty +
+        '</td><td class="num">' + (item.empty_out - (item.full_in - (item.new_full || 0))) + '</td><td class="num">' + money(item.amount) + '</td></tr>'
       );
       const goods = (purchase.catalog_items || []).map((item) =>
         '<tr><td><b>' + esc(item.name) + '</b><small class="sub">Other item · ' + esc(item.unit) + '</small></td>' +
-        '<td class="num">' + esc(item.quantity) + ' ' + esc(item.unit) + '</td><td class="num">—</td><td class="num">—</td><td class="num">' + money(item.rate) + '</td><td class="num">' + money(item.amount) + '</td></tr>'
+        '<td class="num">' + esc(item.quantity) + ' ' + esc(item.unit) + ' × ' + money(item.rate) + '</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">' + money(item.amount) + '</td></tr>'
       );
       $("pd-items").innerHTML = cylinders.concat(goods).join("") || '<tr><td colspan="6">No items recorded.</td></tr>';
       $("pd-totals").innerHTML = [
