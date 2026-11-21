@@ -34,8 +34,7 @@ daily backup in a `backups` folder next to it (newest 30 kept).
 | Shell (sidebar, top bar, Quick Add, Select customer / supplier) | done | done |
 | Home / dashboard | done | done |
 | Sales, New sale, Tax invoice, Cancel bill | to be built | to be built |
-| Customers, customer ledger | to be built | list API done |
-| Udhaar & payments, Receive payment | to be built | to be built |
+| Customers, customer ledger, receave payment | done | list API done |
 | Purchases (record + attach supplier's bill) | to be built | to be built |
 | Suppliers | to be built | list API done |
 | Stock & Price, damaged cylinders | to be built | to be built |
@@ -46,3 +45,10 @@ daily backup in a `backups` folder next to it (newest 30 kept).
 Bill format: the **tax invoice** (Pdf1) is the customer bill - business name only,
 no developer credits. Purchases are records of the supplier's own bill, with an
 option to attach that bill; we do not generate purchase bills.
+
+changes in V0.2:
+- Merged and Update the Customers / Udhaar rows and rename Data & sync.
+- Merging Purchase + Supplier and the supplier-per-item link in Stock & Price are
+  planned in `schema.sql` (comment at the bottom) and still to be built.
+- PDF / Excel export: every Export button already calls `Cust.exportData(kind, scope)`
+  in `static/js/customers_common.js`. Implement it there when we do exports.

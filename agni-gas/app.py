@@ -7,7 +7,7 @@ later without touching the frontend (see static/js/config.js).
 """
 import os
 
-from flask import Flask, render_template
+from flask import Flask, redirect, render_template
 
 from paths import resource_path
 
@@ -16,8 +16,7 @@ PAGES = {
     "/": ("dashboard.html", "home", "Home", ""),
     "/sales": ("placeholder.html", "sales", "Sales", "Sales list, filters and export"),
     "/sales/new": ("placeholder.html", "sales", "New Sale", "Cylinder sale form, payment and GST"),
-    "/customers": ("placeholder.html", "customers", "Customers", "Customer list, add customer, ledger"),
-    "/udhaar": ("placeholder.html", "udhaar", "Udhaar & payments", "Udhaar list, receive payment, payment history"),
+    "/customers": ("customers.html", "customers", "Customers", "Customer list, add customer, ledger along with Udhaar list, receive payment, payment history"),
     "/purchases": ("placeholder.html", "purchases", "Purchases",
                    "Record purchases and attach the supplier's bill"),
     "/purchases/new": ("placeholder.html", "purchases", "New purchase",
@@ -25,7 +24,7 @@ PAGES = {
     "/suppliers": ("placeholder.html", "suppliers", "Suppliers", "Supplier list, add supplier, ledger"),
     "/stock": ("placeholder.html", "stock", "Stock & Price", "Cylinder stock, prices, damaged stock, history"),
     "/reports": ("placeholder.html", "reports", "Reports", "The five business reports, PDF and Excel export"),
-    "/data": ("placeholder.html", "data", "Data & sync", "Backup, restore, export and import"),
+    "/data": ("placeholder.html", "data", "Data & Backup", "Backup, restore, export and import"),
     "/help": ("placeholder.html", "help", "Help & support", "Support contacts"),
 }
 
@@ -60,6 +59,10 @@ def create_app() -> Flask:
         endpoint = "page_" + (url.strip("/").replace("/", "_") or "home")
         app.add_url_rule(url, endpoint, make_view(template, nav, title, note))
 
+    app.add_url_rule("/customers/<int:cid>", "page_customer_detail",
+                     make_view("customer_detail.html", "customers", "Customer", ""))
+    app.add_url_rule("/udhaar", "page_udhaar", lambda: redirect("/customers"))
+    
     # Sale detail / receipt (recent-sales rows link here)
     app.add_url_rule(
         "/sales/<int:sale_id>", "page_sale_detail",

@@ -73,3 +73,21 @@ def next_number(db: sqlite3.Connection, name: str, prefix: str) -> str:
     )
     n = db.execute("SELECT value FROM counters WHERE name = ?", (name,)).fetchone()[0]
     return f"{prefix}-{n:05d}"
+
+
+from contextlib import contextmanager  # noqa: E402
+
+
+@contextmanager
+def transaction(conn: sqlite3.Connection):
+    """All-or-nothing write block: `with transaction(db): ...`"""
+    if conn.in_transaction:
+        conn.commit()
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        yield conn
+    except BaseException:
+        conn.rollback()
+        raise
+    else:
+        conn.commit()

@@ -32,3 +32,20 @@ def gst_paise(taxable_paise: int, percent) -> int:
     """GST on an amount, rounded to the nearest paisa."""
     d = Decimal(str(percent or 0))
     return int((Decimal(taxable_paise) * d / 100).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+
+
+def format_inr(paise) -> str:
+    """145050 -> 'Rs 1,450.50'; 11525000 -> 'Rs 1,15,250' (Indian grouping)."""
+    p = int(paise or 0)
+    sign = "-" if p < 0 else ""
+    rupees, ps = divmod(abs(p), 100)
+    s = str(rupees)
+    if len(s) > 3:
+        head, tail, groups = s[:-3], s[-3:], []
+        while len(head) > 2:
+            groups.insert(0, head[-2:])
+            head = head[:-2]
+        if head:
+            groups.insert(0, head)
+        s = ",".join(groups + [tail])
+    return f"{sign}Rs {s}" + (f".{ps:02d}" if ps else "")

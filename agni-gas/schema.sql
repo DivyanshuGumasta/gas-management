@@ -111,3 +111,28 @@ CREATE TABLE IF NOT EXISTS stock_movements (             -- append-only stock hi
 
 -- Still to add when those screens are built: purchases, purchase_items
 -- (+ attached supplier bill file), supplier_payments.
+
+-- Cylinders currently with each customer: append-only ledger (+ given, - returned).
+CREATE TABLE IF NOT EXISTS cylinder_ledger (
+    id               INTEGER PRIMARY KEY,
+    customer_id      INTEGER NOT NULL REFERENCES customers(id),
+    cylinder_type_id INTEGER NOT NULL REFERENCES cylinder_types(id),
+    delta            INTEGER NOT NULL,
+    ref_type         TEXT,                               -- sale | return | opening
+    ref_id           INTEGER,
+    entry_date       TEXT NOT NULL,
+    note             TEXT,
+    created_at       TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_cyl_ledger_customer ON cylinder_ledger(customer_id);
+
+-- Per-customer special price (overrides the retail / wholesale price in a sale).
+CREATE TABLE IF NOT EXISTS customer_prices (
+    customer_id      INTEGER NOT NULL REFERENCES customers(id),
+    cylinder_type_id INTEGER NOT NULL REFERENCES cylinder_types(id),
+    price_paise      INTEGER NOT NULL,
+    PRIMARY KEY (customer_id, cylinder_type_id)
+);
+
+-- Planned (Stock & Price / Purchase + Supplier merge): supplier_items table linking
+-- each cylinder size to the supplier(s) who sell it, with that supplier's price.

@@ -1,0 +1,344 @@
+"""Customer API: list, add / edit / delete, ledger, cylinders held, empties
+returned, special prices.
+
+Balance sign everywhere: + = customer owes us (udhaar / "To receive"),
+                         - = customer has paid extra (advance).
+Balance = opening + sum(active sales: total - paid) - sum(active payments).
+"""
+from flask import jsonify, request
+
+from db import get_db, transaction
+from money import format_inr, to_rupees
+
+from . import api_bp
+from .util import (RECEIVED_IN, ApiError, body, day_field, int_field, money_field,
+                   phone_field, text)
+
+BALANCE_SQL = """c.opening_balance_paise
+    + COALESCE((SELECT SUM(s.total_paise - s.paid_paise) FROM sales s
+                WHERE s.customer_id = c.id AND s.status = 'active'), 0)
+    - COALESCE((SELECT SUM(p.amount_paise) FROM payments p
+                WHERE p.customer_id = c.id AND p.status = 'active'), 0)"""
+HELD_SQL = "COALESCE((SELECT SUM(l.delta) FROM cylinder_ledger l WHERE l.customer_id = c.id), 0)"
+SELECT = f"SELECT c.*, {BALANCE_SQL} AS balance, {HELD_SQL} AS held FROM customers c"
+
+
+def _dict(r):
+    return {
+        "id": r["id"],
+        "name": r["name"],
+        "phone": r["phone"],
+        "address": r["address"],
+        "note": r["note"],
+        "type": r["type"],
+        "type_label": r["type"].capitalize(),
+        "opening_balance": to_rupees(r["opening_balance_paise"]),
+        "balance": to_rupees(r["balance"]),
+        "cylinders": r["held"],
+        "created_at": r["created_at"],
+    }
+
+
+def customer_row(cid, include_inactive=False):
+    sql = SELECT + " WHERE c.id = ?" + ("" if include_inactive else " AND c.active = 1")
+    r = get_db().execute(sql, (cid,)).fetchone()
+    if not r:
+        raise ApiError("Customer not found.", 404)
+    return r
+
+
+def customer_dict(cid):
+    return _dict(customer_row(cid))
+
+
+# ---------------------------------------------------------------- list
+@api_bp.get("/customers")
+def customers_list():
+    q = (request.args.get("q") or "").strip()
+    ctype = request.args.get("type")
+    where, params = " WHERE c.active = 1", []
+    if q:
+        where += " AND (c.name LIKE ? OR c.phone LIKE ? OR c.address LIKE ?)"
+        params += [f"%{q}%"] * 3
+    if ctype in ("retail", "wholesale"):
+        where += " AND c.type = ?"
+        params.append(ctype)
+    rows = get_db().execute(SELECT + where + " ORDER BY c.name COLLATE NOCASE", params).fetchall()
+    if request.args.get("owing") == "1":
+        rows = [r for r in rows if r["balance"] > 0]
+    return jsonify([_dict(r) for r in rows])
+
+
+@api_bp.get("/customers/summary")
+def customers_summary():
+    rows = get_db().execute(SELECT + " WHERE c.active = 1").fetchall()
+    owing = [r["balance"] for r in rows if r["balance"] > 0]
+    advance = [-r["balance"] for r in rows if r["balance"] < 0]
+    return jsonify(
+        {
+            "total_udhaar": to_rupees(sum(owing)),
+            "owing_count": len(owing),
+            "total_advance": to_rupees(sum(advance)),
+            "customer_count": len(rows),
+        }
+    )
+
+
+# ------------------------------------------------------ create / edit / delete
+def _parse(data, self_id=None):
+    name = text(data, "name", "Customer name", required=True, max_len=80)
+    ctype = data.get("type", "retail")
+    if ctype not in ("retail", "wholesale"):
+        raise ApiError("Choose Retail or Wholesale.", field="type")
+    phone = phone_field(data)
+    kind = data.get("opening_type", "udhaar")
+    if kind not in ("udhaar", "advance"):
+        raise ApiError("Choose Udhaar or Advance.", field="opening_type")
+    amount = money_field(data, "opening_amount", "Previous balance")
+    dup = get_db().execute(
+        "SELECT id FROM customers WHERE active = 1 AND lower(name) = lower(?) "
+        "AND COALESCE(phone, '') = COALESCE(?, '') AND id IS NOT ?",
+        (name, phone, self_id),
+    ).fetchone()
+    if dup:
+        raise ApiError("A customer with this name and phone already exists.", 409, field="name")
+    return {
+        "name": name,
+        "type": ctype,
+        "phone": phone,
+        "address": text(data, "address", "Address", max_len=200),
+        "note": text(data, "note", "Note", max_len=500),
+        "opening": amount if kind == "udhaar" else -amount,
+    }
+
+
+@api_bp.post("/customers")
+def customer_create():
+    f = _parse(body())
+    db = get_db()
+    with transaction(db):
+        cid = db.execute(
+            "INSERT INTO customers (name, phone, address, type, opening_balance_paise, note)"
+            " VALUES (?,?,?,?,?,?)",
+            (f["name"], f["phone"], f["address"], f["type"], f["opening"], f["note"]),
+        ).lastrowid
+    return jsonify(customer_dict(cid)), 201
+
+
+@api_bp.get("/customers/<int:cid>")
+def customer_get(cid):
+    return jsonify(customer_dict(cid))
+
+
+@api_bp.put("/customers/<int:cid>")
+def customer_update(cid):
+    customer_row(cid)
+    f = _parse(body(), self_id=cid)
+    db = get_db()
+    with transaction(db):
+        db.execute(
+            "UPDATE customers SET name=?, phone=?, address=?, type=?, opening_balance_paise=?, note=?"
+            " WHERE id=?",
+            (f["name"], f["phone"], f["address"], f["type"], f["opening"], f["note"], cid),
+        )
+    return jsonify(customer_dict(cid))
+
+
+@api_bp.delete("/customers/<int:cid>")
+def customer_delete(cid):
+    """Allowed only when balance is clear and no cylinders are held.
+    Customers with history are hidden (kept for old bills and reports);
+    customers never used are removed completely."""
+    db = get_db()
+    c = customer_row(cid)
+    if c["balance"] > 0:
+        raise ApiError(f"{c['name']} still owes you {format_inr(c['balance'])}. Receive the payment first.", 409)
+    if c["balance"] < 0:
+        raise ApiError(f"{c['name']} has {format_inr(-c['balance'])} paid in advance. Settle it first.", 409)
+    if c["held"] != 0:
+        raise ApiError(f"{c['name']} still has {c['held']} cylinder(s). Record return of empties first.", 409)
+    has_history = db.execute(
+        "SELECT (SELECT COUNT(*) FROM sales WHERE customer_id = :c) + "
+        "(SELECT COUNT(*) FROM payments WHERE customer_id = :c) + "
+        "(SELECT COUNT(*) FROM cylinder_ledger WHERE customer_id = :c)",
+        {"c": cid},
+    ).fetchone()[0]
+    with transaction(db):
+        if has_history or c["opening_balance_paise"]:
+            db.execute("UPDATE customers SET active = 0 WHERE id = ?", (cid,))
+        else:
+            db.execute("DELETE FROM customer_prices WHERE customer_id = ?", (cid,))
+            db.execute("DELETE FROM customers WHERE id = ?", (cid,))
+    return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------------- ledger
+@api_bp.get("/customers/<int:cid>/ledger")
+def customer_ledger(cid):
+    db = get_db()
+    c = customer_row(cid, include_inactive=True)
+    opening = c["opening_balance_paise"]
+    rows = [{
+        "kind": "opening", "date": None, "detail": "Opening balance", "sub": None,
+        "sale": to_rupees(opening) if opening > 0 else None,
+        "paid": to_rupees(-opening) if opening < 0 else None,
+        "balance": to_rupees(opening), "status": "active",
+    }]
+
+    events = []
+    for s in db.execute(
+        "SELECT id, number, sale_date, created_at, total_paise, paid_paise, status FROM sales "
+        "WHERE customer_id = ?", (cid,)
+    ):
+        items = db.execute(
+            "SELECT si.qty_out, t.name FROM sale_items si JOIN cylinder_types t ON t.id = si.cylinder_type_id "
+            "WHERE si.sale_id = ? AND si.qty_out > 0 ORDER BY si.id", (s["id"],)
+        ).fetchall()
+        events.append(((s["sale_date"], s["created_at"], 0, s["id"]), {
+            "kind": "sale", "id": s["id"], "date": s["sale_date"], "detail": f"Sale {s['number']}",
+            "sub": ", ".join(f"{i['qty_out']} x {i['name']}" for i in items) or None,
+            "sale": to_rupees(s["total_paise"]),
+            "paid": to_rupees(s["paid_paise"]) if s["paid_paise"] else None,
+            "status": s["status"], "delta": s["total_paise"] - s["paid_paise"],
+        }))
+    for p in db.execute(
+        "SELECT id, number, payment_date, created_at, amount_paise, received_in, note, status "
+        "FROM payments WHERE customer_id = ?", (cid,)
+    ):
+        sub = RECEIVED_IN.get(p["received_in"], p["received_in"]) + (f" · {p['note']}" if p["note"] else "")
+        events.append(((p["payment_date"], p["created_at"], 1, p["id"]), {
+            "kind": "payment", "id": p["id"], "date": p["payment_date"],
+            "detail": f"Payment received {p['number']}", "sub": sub, "sale": None,
+            "paid": to_rupees(p["amount_paise"]), "status": p["status"], "delta": -p["amount_paise"],
+        }))
+
+    running = opening
+    for _, e in sorted(events, key=lambda x: x[0]):
+        if e["status"] == "active":          # cancelled entries are shown but never counted
+            running += e["delta"]
+        e["balance"] = to_rupees(running)
+        del e["delta"]
+        rows.append(e)
+    return jsonify({"rows": rows, "closing_balance": to_rupees(running)})
+
+
+# ------------------------------------------------------- cylinders held
+def _held(db, cid):
+    return db.execute(
+        "SELECT l.cylinder_type_id AS id, t.name, SUM(l.delta) AS qty FROM cylinder_ledger l "
+        "JOIN cylinder_types t ON t.id = l.cylinder_type_id WHERE l.customer_id = ? "
+        "GROUP BY l.cylinder_type_id HAVING SUM(l.delta) <> 0 ORDER BY t.sort_order, t.id", (cid,)
+    ).fetchall()
+
+
+def _cylinders_payload(db, cid):
+    held = _held(db, cid)
+    history = db.execute(
+        "SELECT l.entry_date, l.delta, l.ref_type, l.note, t.name, s.number AS sale_number "
+        "FROM cylinder_ledger l JOIN cylinder_types t ON t.id = l.cylinder_type_id "
+        "LEFT JOIN sales s ON l.ref_type = 'sale' AND s.id = l.ref_id "
+        "WHERE l.customer_id = ? ORDER BY l.entry_date DESC, l.id DESC LIMIT 100", (cid,)
+    ).fetchall()
+    label = {"return": "Empties returned", "opening": "Opening"}
+    return {
+        "total": sum(h["qty"] for h in held),
+        "held": [{"cylinder_type_id": h["id"], "name": h["name"], "qty": h["qty"]} for h in held],
+        "history": [{
+            "date": h["entry_date"], "type": h["name"], "delta": h["delta"], "note": h["note"],
+            "detail": f"Sale {h['sale_number']}" if h["sale_number"] else label.get(h["ref_type"], "Adjustment"),
+        } for h in history],
+    }
+
+
+@api_bp.get("/customers/<int:cid>/cylinders")
+def customer_cylinders(cid):
+    customer_row(cid, include_inactive=True)
+    return jsonify(_cylinders_payload(get_db(), cid))
+
+
+@api_bp.post("/customers/<int:cid>/return-empties")
+def return_empties(cid):
+    db = get_db()
+    customer_row(cid)
+    data = body()
+    items = data.get("items")
+    if not isinstance(items, list) or not items:
+        raise ApiError("Enter how many empties came back.")
+    day = day_field(data)
+    note = text(data, "note", "Note", max_len=200)
+
+    wanted = {}
+    for it in items:
+        if not isinstance(it, dict):
+            raise ApiError("Invalid items.")
+        tid = int_field(it.get("cylinder_type_id"), "Cylinder type", minimum=1)
+        qty = int_field(it.get("qty", 0), "Quantity", field=f"qty_{tid}")
+        if qty:
+            wanted[tid] = wanted.get(tid, 0) + qty
+    if not wanted:
+        raise ApiError("Enter how many empties came back.")
+
+    with transaction(db):
+        held = {h["id"]: (h["qty"], h["name"]) for h in _held(db, cid)}
+        for tid, qty in wanted.items():
+            have, name = held.get(tid, (0, None))
+            if name is None:
+                raise ApiError("This customer does not have that cylinder size.", 409, field=f"qty_{tid}")
+            if qty > have:
+                raise ApiError(f"{name}: only {have} with this customer.", 409, field=f"qty_{tid}")
+        for tid, qty in wanted.items():
+            db.execute(
+                "INSERT INTO cylinder_ledger (customer_id, cylinder_type_id, delta, ref_type, entry_date, note)"
+                " VALUES (?,?,?,?,?,?)", (cid, tid, -qty, "return", day, note))
+            db.execute("UPDATE cylinder_types SET empty_qty = empty_qty + ?, "
+                       "with_customers_qty = with_customers_qty - ? WHERE id = ?", (qty, qty, tid))
+            db.execute(
+                "INSERT INTO stock_movements (cylinder_type_id, ref_type, ref_id, empty_delta, note)"
+                " VALUES (?,?,?,?,?)", (tid, "return", cid, qty, note))
+    return jsonify(_cylinders_payload(db, cid))
+
+
+# ------------------------------------------------------- special prices
+def _prices_payload(db, c):
+    special = {r["cylinder_type_id"]: r["price_paise"] for r in db.execute(
+        "SELECT cylinder_type_id, price_paise FROM customer_prices WHERE customer_id = ?", (c["id"],))}
+    col = "wholesale_price_paise" if c["type"] == "wholesale" else "sale_price_paise"
+    return [{
+        "cylinder_type_id": t["id"], "name": t["name"], "default_price": to_rupees(t[col]),
+        "special_price": to_rupees(special[t["id"]]) if t["id"] in special else None,
+    } for t in db.execute(
+        f"SELECT id, name, {col} FROM cylinder_types WHERE active = 1 ORDER BY sort_order, id")]
+
+
+@api_bp.get("/customers/<int:cid>/prices")
+def customer_prices(cid):
+    return jsonify(_prices_payload(get_db(), customer_row(cid, include_inactive=True)))
+
+
+@api_bp.put("/customers/<int:cid>/prices")
+def customer_prices_save(cid):
+    db = get_db()
+    c = customer_row(cid)
+    prices = body().get("prices")
+    if not isinstance(prices, dict):
+        raise ApiError("Send the prices to save.")
+    valid = {r["id"] for r in db.execute("SELECT id FROM cylinder_types")}
+    parsed = {}
+    for key, value in prices.items():
+        tid = int_field(key, "Cylinder type", minimum=1)
+        if tid not in valid:
+            raise ApiError("Unknown cylinder size.", 404)
+        if value is None or str(value).strip() == "":
+            parsed[tid] = None
+        else:
+            parsed[tid] = money_field({f"price_{tid}": value}, f"price_{tid}", "Price", allow_zero=False)
+    with transaction(db):
+        for tid, paise in parsed.items():
+            if paise is None:
+                db.execute("DELETE FROM customer_prices WHERE customer_id=? AND cylinder_type_id=?", (cid, tid))
+            else:
+                db.execute(
+                    "INSERT INTO customer_prices (customer_id, cylinder_type_id, price_paise) VALUES (?,?,?) "
+                    "ON CONFLICT(customer_id, cylinder_type_id) DO UPDATE SET price_paise = excluded.price_paise",
+                    (cid, tid, paise))
+    return jsonify(_prices_payload(db, c))

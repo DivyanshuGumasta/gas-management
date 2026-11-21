@@ -55,6 +55,10 @@ def seed(conn):
     _sale(conn, None, yesterday, "21:38:00", "5 kg", 1, 1450, 1450)       # walk-in, paid
     _sale(conn, ids["tiku"], today, "10:23:00", "15 kg", 1, 4100, 4100)    # paid
     _sale(conn, ids["harry"], today, "10:45:00", "5 kg", 1, 1450, 950)     # Rs 500 pending
+    # harry is holding one 45.4 kg cylinder (matches "With customers: 1" on the dashboard)
+    conn.execute(
+        "INSERT INTO cylinder_ledger (customer_id, cylinder_type_id, delta, ref_type, entry_date)"
+        " VALUES (?,?,?,?,?)", (ids["harry"], _type_id(conn, "45.4 kg"), 1, "opening", today.isoformat()))
     conn.commit()
 
 

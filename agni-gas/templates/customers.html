@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/customers.css') }}">
+
+<div id="cust-error" class="banner banner-error" hidden>
+  <span></span>
+  <button class="btn btn-ghost btn-sm" id="cust-retry">Retry</button>
+</div>
+
+<div class="page-head">
+  <h1 class="page-title">Customers</h1>
+  <div class="head-actions">
+    <div class="menu-wrap" data-scope="customers">
+      <button class="btn btn-white" data-menu-toggle type="button"><i data-cicon="download"></i>Export<i data-cicon="chevronDown"></i></button>
+      <div class="menu" hidden>
+        <button type="button" data-export="pdf">Download PDF</button>
+        <button type="button" data-export="excel">Download Excel</button>
+      </div>
+    </div>
+    <button class="btn btn-green" id="btn-receive" type="button"><i data-icon="handCoins"></i>Receive</button>
+    <button class="btn btn-dark" id="btn-add" type="button"><i data-icon="userPlus"></i>Add customer</button>
+  </div>
+</div>
+
+<div class="tabs" role="tablist">
+  <button class="tab on" id="tab-list" role="tab" type="button">Customer list</button>
+  <button class="tab" id="tab-history" role="tab" type="button">Payment history</button>
+</div>
+
+<!-- ============ Customer list (All / Retail / Wholesale / Udhaar) ============ -->
+<section id="view-list">
+  <div class="toolbar">
+    <div class="chips" id="chips">
+      <button class="chip on" data-type="all" type="button">All</button>
+      <button class="chip" data-type="retail" type="button">Retail</button>
+      <button class="chip" data-type="wholesale" type="button">Wholesale</button>
+      <button class="chip" data-type="udhaar" type="button">Udhaar</button>
+    </div>
+    <label class="search"><i data-icon="search"></i>
+      <input type="search" id="search" placeholder="Search name, phone, address" autocomplete="off"></label>
+  </div>
+
+  <div class="sum-grid" id="sum" hidden>
+    <div class="sum-card"><div class="label">Total udhaar</div><div class="value red" id="sum-total">Rs 0</div></div>
+    <div class="sum-card"><div class="label">Customers owing</div><div class="value" id="sum-count">0</div></div>
+  </div>
+
+  <div class="list-card" id="list"></div>
+</section>
+
+<!-- ============ Payment history ============ -->
+<section id="view-history" hidden>
+  <div class="toolbar">
+    <label class="search"><i data-icon="search"></i>
+      <input type="search" id="pay-search" placeholder="Search customer, receipt, note" autocomplete="off"></label>
+    <div class="date-filter">
+      <span>From</span><input type="date" id="pay-from">
+      <span>To</span><input type="date" id="pay-to">
+    </div>
+  </div>
+  <div class="list-card"><div class="tbl-wrap" id="pay-table"></div></div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/customers_common.js') }}"></script>
+<script src="{{ url_for('static', filename='js/customers.js') }}"></script>
+{% endblock %}

@@ -127,7 +127,7 @@
   /* ---------- Quick Add ---------- */
   // Receive / purchase flows are wired for real when those screens are built.
   function receivePayment() {
-    selectCustomer((c) => { window.location.href = "/udhaar?receive=" + c.id; });
+    selectCustomer((c) => { window.location.href = "/customers?receive=" + c.id; });
   }
   function newPurchase() {
     selectSupplier((s) => { window.location.href = "/purchases/new?supplier=" + s.id; });
