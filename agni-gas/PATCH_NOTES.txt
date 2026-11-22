@@ -1,0 +1,8 @@
+Agni Gas v0.4.5 update overlay
+
+Extract the contents of this ZIP into your existing agni-gas directory,
+the directory containing app.py. Allow files to be replaced.
+
+This overlay adds damaged-cylinder dispatch and sole-active-supplier defaults.
+It intentionally does not contain data/agni.db, backups, __pycache__, or .git.
+Your local agency database and backups will therefore remain untouched.

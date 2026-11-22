@@ -308,3 +308,28 @@ CREATE TABLE IF NOT EXISTS cylinder_deposits (
     created_at       TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_cylinder_deposits ON cylinder_deposits(cylinder_type_id, supplier_id);
+
+-- Physical dispatch of cylinders that were already marked damaged.
+-- This is an inventory/audit record only; it does not refund or cancel deposits.
+CREATE TABLE IF NOT EXISTS damaged_cylinder_dispatches (
+    id            INTEGER PRIMARY KEY,
+    dispatch_date TEXT NOT NULL,
+    note          TEXT,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+
+CREATE TABLE IF NOT EXISTS damaged_cylinder_dispatch_items (
+    id                       INTEGER PRIMARY KEY,
+    dispatch_id              INTEGER NOT NULL REFERENCES damaged_cylinder_dispatches(id),
+    damage_event_id          INTEGER NOT NULL REFERENCES cylinder_deposits(id),
+    cylinder_type_id         INTEGER NOT NULL REFERENCES cylinder_types(id),
+    supplier_id              INTEGER REFERENCES suppliers(id),
+    qty                      INTEGER NOT NULL CHECK (qty > 0),
+    deposit_reference_paise  INTEGER NOT NULL DEFAULT 0,
+    created_at               TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    UNIQUE (dispatch_id, damage_event_id)
+);
+CREATE INDEX IF NOT EXISTS idx_damaged_dispatch_items_event
+    ON damaged_cylinder_dispatch_items(damage_event_id);
+CREATE INDEX IF NOT EXISTS idx_damaged_dispatch_items_dispatch
+    ON damaged_cylinder_dispatch_items(dispatch_id);

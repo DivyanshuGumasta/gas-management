@@ -724,6 +724,12 @@
     Api.get("/api/suppliers/" + encodeURIComponent(preferred))
       .then(async (supplier) => { setSupplier(supplier); await loadOptions(); })
       .catch((err) => showError("Could not load the selected supplier. " + err.message));
+  } else {
+    Api.get("/api/suppliers").then(async (suppliers) => {
+      if (suppliers.length !== 1) return;
+      setSupplier(suppliers[0]);
+      await loadOptions();
+    }).catch(() => {});
   }
   calculate();
 })();

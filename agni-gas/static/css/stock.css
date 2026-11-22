@@ -99,3 +99,28 @@
 .st-sup-grid { grid-template-columns: repeat(3, 1fr); row-gap: 8px; }
 .st-sup-btns { margin-top: 10px; padding-top: 8px; border-top: 1px solid #e3e2f0; flex-wrap: wrap; }
 .st-refund { font-weight: 700; color: var(--green); }
+
+/* ---- v0.4.5: dispatch damaged cylinders ---- */
+.st-damaged-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.st-damaged-actions .btn:disabled { opacity: .45; cursor: not-allowed; }
+.st-dmg-dispatch-head,
+.st-dmg-dispatch-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 1fr) minmax(90px, .65fr);
+  gap: 8px;
+  align-items: end;
+  margin-bottom: 9px;
+}
+.st-dmg-dispatch-head { margin-top: 8px; font-size: 11px; color: var(--muted); }
+.st-dmg-dispatch-row { padding: 10px; border: 1px solid #e3e2f0; border-radius: 10px; background: #fafaff; }
+.st-dmg-dispatch-name { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; font-weight: 650; }
+.st-dmg-dispatch-name small { display: block; margin-top: 3px; font-size: 11px; font-weight: 400; color: var(--muted); }
+.st-dmg-dispatch-row .field { min-width: 0; margin: 0; }
+.st-dmg-dispatch-row .field > span { font-size: 11px; }
+.st-dmg-dispatch-row .amt input { width: 100%; min-width: 0; }
+.st-dmg-dispatch-row input:disabled { background: #f1f1f6; color: #9a99b0; }
+@media (max-width: 640px) {
+  .st-dmg-dispatch-head { display: none; }
+  .st-dmg-dispatch-row { grid-template-columns: 1fr 1fr; }
+  .st-dmg-dispatch-name { grid-column: 1 / -1; }
+}

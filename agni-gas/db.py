@@ -75,6 +75,14 @@ def init_db(path: str | None = None) -> None:
                 "SELECT i.cylinder_type_id, p.supplier_id, 'paid', i.new_full_qty + i.new_empty_qty, "
                 "(i.new_full_qty + i.new_empty_qty) * i.security_rate_paise, p.id, 'Purchase ' || p.number "
                 "FROM purchase_items i JOIN purchases p ON p.id = i.purchase_id WHERE i.new_full_qty + i.new_empty_qty > 0")
+        # v0.4.5: if this existing database has exactly one active supplier, make it
+        # the default supplier for every active cylinder size and catalogue item once.
+        if not conn.execute(
+            "SELECT 1 FROM settings WHERE key='sole_supplier_auto_link_v1'"
+        ).fetchone():
+            sole_supplier_id = sole_active_supplier_id(conn)
+            if sole_supplier_id is not None:
+                link_all_stock_to_supplier(conn, sole_supplier_id)
         conn.commit()
     finally:
         conn.close()
@@ -124,3 +132,80 @@ def transaction(conn: sqlite3.Connection):
         raise
     else:
         conn.commit()
+
+
+def sole_active_supplier_id(conn):
+    """Return the only active supplier id, or None when there are zero or multiple."""
+    rows = conn.execute(
+        "SELECT id FROM suppliers WHERE active=1 ORDER BY id LIMIT 2"
+    ).fetchall()
+    return rows[0]["id"] if len(rows) == 1 else None
+
+
+def link_all_stock_to_supplier(conn, supplier_id):
+    """Link every active cylinder size and ordinary item to this supplier without overwriting existing rates."""
+    conn.execute(
+        "INSERT OR IGNORE INTO supplier_items "
+        "(supplier_id,cylinder_type_id,purchase_price_paise,security_paise,empty_qty) "
+        "SELECT ?,id,purchase_price_paise,security_paise,0 FROM cylinder_types WHERE active=1",
+        (supplier_id,),
+    )
+
+    # An existing inactive catalogue association is reactivated, but its saved supplier rate is preserved.
+    items = conn.execute(
+        "SELECT id,purchase_price_paise FROM catalog_items WHERE active=1"
+    ).fetchall()
+    for item in items:
+        conn.execute(
+            "INSERT INTO supplier_catalog_items "
+            "(supplier_id,item_id,purchase_price_paise,active) VALUES(?,?,?,1) "
+            "ON CONFLICT(supplier_id,item_id) DO UPDATE SET active=1",
+            (supplier_id, item["id"], item["purchase_price_paise"]),
+        )
+
+    # One-time marker prevents a manually removed link being recreated on every app launch.
+    conn.execute(
+        "INSERT INTO settings(key,value) VALUES('sole_supplier_auto_link_v1',?) "
+        "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        (str(supplier_id),),
+    )
+
+
+def link_new_cylinder_to_sole_supplier(conn, cylinder_type_id):
+    """Link a newly created/reactivated cylinder size only when there is exactly one active supplier."""
+    supplier_id = sole_active_supplier_id(conn)
+    if supplier_id is None:
+        return
+    cylinder = conn.execute(
+        "SELECT purchase_price_paise,security_paise FROM cylinder_types WHERE id=? AND active=1",
+        (cylinder_type_id,),
+    ).fetchone()
+    if not cylinder:
+        return
+    conn.execute(
+        "INSERT INTO supplier_items "
+        "(supplier_id,cylinder_type_id,purchase_price_paise,security_paise,empty_qty) VALUES(?,?,?,?,0) "
+        "ON CONFLICT(supplier_id,cylinder_type_id) DO UPDATE SET "
+        "purchase_price_paise=excluded.purchase_price_paise,security_paise=excluded.security_paise",
+        (supplier_id, cylinder_type_id, cylinder["purchase_price_paise"], cylinder["security_paise"]),
+    )
+
+
+def link_new_item_to_sole_supplier(conn, item_id):
+    """Link a newly created/reactivated ordinary item only when there is exactly one active supplier."""
+    supplier_id = sole_active_supplier_id(conn)
+    if supplier_id is None:
+        return
+    item = conn.execute(
+        "SELECT purchase_price_paise FROM catalog_items WHERE id=? AND active=1",
+        (item_id,),
+    ).fetchone()
+    if not item:
+        return
+    conn.execute(
+        "INSERT INTO supplier_catalog_items "
+        "(supplier_id,item_id,purchase_price_paise,active) VALUES(?,?,?,1) "
+        "ON CONFLICT(supplier_id,item_id) DO UPDATE SET "
+        "purchase_price_paise=excluded.purchase_price_paise,active=1",
+        (supplier_id, item_id, item["purchase_price_paise"]),
+    )

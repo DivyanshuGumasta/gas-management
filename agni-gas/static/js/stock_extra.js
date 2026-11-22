@@ -4,7 +4,7 @@
   const { esc, fmt } = UI;
   const money = (v) => fmt.money(v);
   const $ = (id) => document.getElementById(id);
-  let ext = { cylinders: {}, damaged: [], suppliers: [], deposits: {} };
+  let ext = { cylinders: {}, damaged: [], damaged_dispatch_options: [], suppliers: [], deposits: {} };
   const supOf = (tid) => (ext.cylinders[tid] && ext.cylinders[tid].suppliers) || [];
 
   /* ---------- a tiny popup helper ---------- */
@@ -24,8 +24,10 @@
   }
   const moneyBox = (name, label, value) => '<label class="field"><span>' + label + '</span><div class="amt"><i>Rs</i><input name="' + name +
     '" inputmode="decimal" autocomplete="off" placeholder="0" value="' + esc(value == null ? "" : value) + '"></div></label>';
-  const supplierSelect = (name, label, list, blank) => '<label class="field"><span>' + label + '</span><select name="' + name + '" class="amt">' +
-    (blank ? '<option value="">' + blank + "</option>" : "") + list.map((s) => '<option value="' + s.id + '">' + esc(s.name) + "</option>").join("") + "</select></label>";
+  const supplierSelect = (name, label, list, blank, selectedId = null) => '<label class="field"><span>' + label + '</span><select name="' + name + '" class="amt">' +
+    (blank ? '<option value="">' + blank + "</option>" : "") + list.map((s) =>
+      '<option value="' + s.id + '"' + (String(selectedId) === String(s.id) ? ' selected' : '') + '>' + esc(s.name) + "</option>"
+    ).join("") + "</select></label>";
   const cyl = (id) => StockUI.state.cylinders.find((c) => c.id === id);
 
   /* ---------- suppliers on each cylinder card (every number is that supplier's own) ---------- */
@@ -65,7 +67,8 @@
     const free = ext.suppliers.filter((s) => !linked.includes(s.id));
     if (!free.length) { StockUI.toast(ext.suppliers.length ? "Every supplier already sells this size." : "Add a supplier first (Suppliers & Purchases).", true); return; }
     popup("Add supplier · " + c.name, "Each supplier has their own price and security deposit for this cylinder.",
-      supplierSelect("supplier_id", "Supplier", free) +
+      supplierSelect("supplier_id", "Supplier", free, null,
+        ext.suppliers.length === 1 ? ext.suppliers[0].id : null) +
       '<div class="two">' + moneyBox("purchase_price", "Their price (full cylinder)") + moneyBox("security", "Their security deposit", c.security) + "</div>", "Add supplier",
       (f) => Api.post("/api/cylinders/" + tid + "/suppliers", { supplier_id: f.elements.supplier_id.value,
         purchase_price: f.elements.purchase_price.value.trim(), security: f.elements.security.value.trim() }),
@@ -95,8 +98,9 @@
 
   /* ---------- send back ---------- */
   function sendBack(tid, sid) {
-    const c = cyl(tid), s = sid ? supOf(tid).find((x) => x.supplier_id === sid) : null;
-    const opts = ext.suppliers.map((p) => '<option value="' + p.id + '"' + (p.id === sid ? " selected" : "") + ">" + esc(p.name) + "</option>").join("");
+    const selectedSid = sid || (ext.suppliers.length === 1 ? ext.suppliers[0].id : 0);
+    const c = cyl(tid), s = selectedSid ? supOf(tid).find((x) => x.supplier_id === selectedSid) : null;
+    const opts = ext.suppliers.map((p) => '<option value="' + p.id + '"' + (p.id === selectedSid ? " selected" : "") + ">" + esc(p.name) + "</option>").join("");
     popup("Send back · " + c.name, "Good empty cylinders going back to a supplier. The security deposit comes back to you as money.",
       '<label class="field"><span>Sent to</span><select name="supplier_id" class="amt"><option value="">Not sure / skip</option>' + opts + "</select></label>" +
       '<div class="two"><label class="field"><span>How many</span><div class="amt"><input name="qty" type="number" min="1" step="1" inputmode="numeric" value="1"><i>cyl</i></div></label>' +
@@ -125,6 +129,8 @@
     $("st-deposit-line").innerHTML = "Deposits held with suppliers <b>" + money(d.held) + "</b> · lost on damaged <b>" + money(d.cancelled) +
       "</b> · received back <b>" + money(d.refunded) + "</b>" +
       (Number(d.refunded) ? " (cash " + money(d.refunded_cash) + ", bank " + money(d.refunded_bank) + ")" : "");
+    const sendButton = $("st-damaged-sendback");
+    sendButton.disabled = !ext.damaged_dispatch_options.length;
   }
   function addDamaged() {
     const cyls = StockUI.state.cylinders;
@@ -135,7 +141,8 @@
       '<div class="amt"><i>Rs</i><input name="d' + c.id + '" inputmode="decimal" value="' + esc(c.security) + '" disabled></div></div>').join("");
     popup("Add damaged cylinder", "Tick the cylinders that are damaged. They leave your stock and their security deposit is cancelled, because they can no longer be used.",
       '<label class="field"><span>They were</span><select name="source" class="amt"><option value="empty">Empty</option><option value="full">Full</option></select></label>' +
-      supplierSelect("supplier_id", "Bought from", ext.suppliers, "Not sure / skip") +
+      supplierSelect("supplier_id", "Bought from", ext.suppliers, "Not sure / skip",
+        ext.suppliers.length === 1 ? ext.suppliers[0].id : null) +
       '<div class="st-dmg-head"><span>Cylinder</span><span>How many</span><span>Deposit each</span></div>' + rows +
       '<p class="st-dmg-total hint" id="st-dmg-total">Deposit cancelled: Rs 0</p>', "Update damaged stock",
       async (f) => {
@@ -165,6 +172,66 @@
       });
   }
 
+  function sendDamagedBack() {
+    const rows = ext.damaged_dispatch_options || [];
+    if (!rows.length) {
+      StockUI.toast("There are no damaged cylinders awaiting dispatch.", true);
+      return;
+    }
+
+    const soleSupplierId = ext.suppliers.length === 1 ? ext.suppliers[0].id : null;
+    const now = new Date();
+    const today = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    const supplierOptions = (selected) =>
+      '<option value="">Not sure / unassigned</option>' + ext.suppliers.map((s) =>
+        '<option value="' + s.id + '"' + (Number(selected) === Number(s.id) ? " selected" : "") + '>' + esc(s.name) + '</option>'
+      ).join("");
+
+    const rowHtml = rows.map((r) => {
+      const id = r.damage_event_id;
+      const markedDate = String(r.damaged_at || "").split(" ")[0];
+      return '<div class="st-dmg-dispatch-row" data-event="' + id + '">' +
+        '<label class="st-dmg-dispatch-name"><input type="checkbox" name="pick' + id + '"><span>' +
+          esc(r.name) + '<small>' + r.remaining_qty + ' awaiting dispatch' + (markedDate ? ' · marked ' + esc(markedDate) : '') + '</small></span></label>' +
+        '<label class="field"><span>Supplier</span><select name="s' + id + '" class="amt">' + supplierOptions(r.supplier_id || soleSupplierId) + '</select></label>' +
+        '<label class="field"><span>Deposit / cylinder</span><div class="amt"><i>Rs</i><input name="d' + id + '" inputmode="decimal" value="' + esc(r.deposit_reference) + '"></div></label>' +
+        '<label class="field"><span>Sending</span><div class="amt"><input name="q' + id + '" type="number" min="1" max="' + r.remaining_qty + '" step="1" inputmode="numeric" value="1" disabled><i>cyl</i></div></label>' +
+      '</div>';
+    }).join("");
+
+    popup(
+      "Send damaged cylinders back",
+      "Tick the damaged-cylinder batches being sent to the supplier. This records the physical dispatch only; their security deposits were already cancelled when they were marked damaged.",
+      '<label class="field"><span>Dispatch date</span><input type="date" name="date" value="' + today + '" max="' + today + '"></label>' +
+      '<label class="field"><span>Note (optional)</span><input name="note" maxlength="200" autocomplete="off" placeholder="Dispatch reference or note"></label>' +
+      '<div class="st-dmg-dispatch-head"><span>Cylinder</span><span>Supplier</span><span>Deposit / cylinder</span><span>Quantity</span></div>' +
+      rowHtml +
+      '<p class="hint">The deposit value is editable for reference only. It will not change the cancelled deposit or any financial report.</p>',
+      "Record dispatch",
+      async (f) => {
+        const items = rows.filter((r) => f.elements["pick" + r.damage_event_id].checked).map((r) => ({
+          damage_event_id: r.damage_event_id,
+          qty: f.elements["q" + r.damage_event_id].value.trim(),
+          supplier_id: f.elements["s" + r.damage_event_id].value,
+          deposit_reference: f.elements["d" + r.damage_event_id].value.trim(),
+        }));
+        if (!items.length) throw new Error("Tick at least one damaged-cylinder row.");
+        await Api.post("/api/stock/damaged/send-back", {
+          date: f.elements.date.value,
+          note: f.elements.note.value.trim(),
+          items,
+        });
+      },
+      "Damaged cylinders sent back",
+      (f) => {
+        f.addEventListener("change", (e) => {
+          const match = /^pick(\d+)$/.exec(e.target.name || "");
+          if (match) f.elements["q" + match[1]].disabled = !e.target.checked;
+        });
+      }
+    );
+  }
+
   /* ---------- wiring ---------- */
   document.addEventListener("click", (e) => {
     const b = e.target.closest("[data-xact]"); if (!b) return;
@@ -174,6 +241,7 @@
        "sup-adjust": () => adjustSupplier(tid, sid), "sup-sendback": () => sendBack(tid, sid), "send-back": () => sendBack(tid, 0) })[b.dataset.xact]();
   });
   $("st-damaged-add").addEventListener("click", addDamaged);
+  $("st-damaged-sendback").addEventListener("click", sendDamagedBack);
   document.addEventListener("stock:rendered", async () => {
     try { ext = await Api.get("/api/stock/extra"); } catch (e) { return; }
     decorateCards();

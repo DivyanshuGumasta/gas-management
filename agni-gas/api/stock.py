@@ -10,7 +10,8 @@ from datetime import date
 from flask import jsonify, request
 
 import lots
-from db import get_db, transaction
+from db import (get_db, transaction, link_new_cylinder_to_sole_supplier,
+                link_new_item_to_sole_supplier)
 from money import to_rupees
 from . import api_bp
 from .util import (ApiError, body, int_field, money_field, quantity_from_milli,
@@ -22,7 +23,7 @@ LOW_ITEM_MILLI = 2000  # an item is "LOW" at 2 (of its unit) or fewer
 MOVEMENT_LABEL = {
     "purchase": "Purchase", "sale": "Sale", "sale_cancel": "Sale cancelled", "adjustment": "Adjusted",
     "opening": "Opening stock", "damaged": "Damaged updated", "customer_return": "Empty returned",
-    "return": "Empty returned",
+    "return": "Empty returned", "damaged_send_back": "Damaged cylinders sent back",
 }
 
 
@@ -157,12 +158,16 @@ def stock_history():
         params.append(int_field(tid, "Cylinder", minimum=1))
     rows = []
     for m in db.execute(
-        "SELECT m.id, m.moved_at, m.ref_type, m.note, m.full_delta, m.empty_delta, m.damaged_delta, t.name, "
-        "COALESCE(p.number, s.number) AS number FROM stock_movements m "
+        "SELECT m.id, COALESCE(dd.dispatch_date || ' 12:00:00', m.moved_at) AS moved_at, "
+        "m.ref_type, m.note, m.full_delta, m.empty_delta, m.damaged_delta, t.name, "
+        "COALESCE(p.number, s.number, CASE WHEN dd.id IS NOT NULL THEN 'Dispatch #' || dd.id END) AS number "
+        "FROM stock_movements m "
         "JOIN cylinder_types t ON t.id=m.cylinder_type_id "
         "LEFT JOIN purchases p ON m.ref_type='purchase' AND p.id=m.ref_id "
-        "LEFT JOIN sales s ON m.ref_type IN ('sale','sale_cancel') AND s.id=m.ref_id" + where +
-        " ORDER BY m.moved_at DESC, m.id DESC LIMIT ?", params + [limit + 1]
+        "LEFT JOIN sales s ON m.ref_type IN ('sale','sale_cancel') AND s.id=m.ref_id "
+        "LEFT JOIN damaged_cylinder_dispatches dd ON m.ref_type='damaged_send_back' AND dd.id=m.ref_id" + where +
+        " ORDER BY COALESCE(dd.dispatch_date || ' 12:00:00', m.moved_at) DESC, m.id DESC LIMIT ?",
+        params + [limit + 1]
     ):
         changes = [{"n": n, "label": label} for n, label in
                    ((m["full_delta"], "Full"), (m["empty_delta"], "Empty"), (m["damaged_delta"], "Damaged")) if n]
@@ -217,6 +222,7 @@ def cylinder_create():
         db.execute("UPDATE cylinder_types SET sale_price_paise=?, wholesale_price_paise=?, purchase_price_paise=?, security_paise=?,"
                    " full_qty=?, empty_qty=? WHERE id=?",
                    (prices["sale_price"], prices["wholesale_price"], prices["purchase_price"], prices["security"], full, empty, tid))
+        link_new_cylinder_to_sole_supplier(db, tid)
         if full or empty:
             _movement(db, tid, "opening", full=full, empty=empty, note="Starting stock")
         if full:
@@ -331,6 +337,7 @@ def item_create():
             iid = db.execute("INSERT INTO catalog_items (name, unit) VALUES (?,?)", (name, unit)).lastrowid
         db.execute("UPDATE catalog_items SET sale_price_paise=?, wholesale_price_paise=?, purchase_price_paise=?, stock_qty_milli=? WHERE id=?",
                    (sale, wholesale, buy, qty, iid))
+        link_new_item_to_sole_supplier(db, iid)
         if qty:
             _item_movement(db, iid, qty, "opening", "Starting stock")
     return _item_response(db, iid, 201)

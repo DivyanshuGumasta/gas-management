@@ -535,7 +535,8 @@ import re
 
 from flask import jsonify, request
 
-from db import get_db, next_number, transaction
+from db import (get_db, next_number, transaction, sole_active_supplier_id,
+                link_all_stock_to_supplier)
 from money import format_inr, to_rupees
 
 from . import api_bp
@@ -636,6 +637,8 @@ def supplier_create():
             "INSERT INTO suppliers (name,gstin,phone,address,opening_balance_paise,note) VALUES (?,?,?,?,?,?)",
             (f["name"], f["gstin"], f["phone"], f["address"], f["opening"], f["note"]),
         ).lastrowid
+        if sole_active_supplier_id(db) == sid:
+            link_all_stock_to_supplier(db, sid)
     return jsonify(_dict(supplier_row(sid))), 201
 
 
@@ -666,6 +669,9 @@ def supplier_delete(sid):
         if s["balance"] != 0:
             raise ApiError(f"{s['name']} has an unsettled balance of {format_inr(s['balance'])}.", 409)
         db.execute("UPDATE suppliers SET active = 0 WHERE id = ?", (sid,))
+        remaining_supplier_id = sole_active_supplier_id(db)
+        if remaining_supplier_id is not None:
+            link_all_stock_to_supplier(db, remaining_supplier_id)
     return jsonify({"ok": True})
 
 

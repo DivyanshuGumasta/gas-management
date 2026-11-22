@@ -15,11 +15,11 @@ from datetime import date
 from flask import jsonify
 
 import lots
-from db import get_db, transaction
+from db import get_db, transaction, sole_active_supplier_id
 from money import to_rupees
 from . import api_bp
 from .stock import _cylinder, _movement
-from .util import ApiError, RECEIVED_IN, body, int_field, money_field
+from .util import ApiError, RECEIVED_IN, body, day_field, int_field, money_field, text
 
 
 def _supplier(db, sid):
@@ -30,6 +30,10 @@ def _supplier(db, sid):
 
 
 def _optional_supplier(db, data):
+    # Omitted means use the only active supplier, if there is exactly one.
+    # An explicitly blank value means the user chose Not sure / unassigned.
+    if "supplier_id" not in data:
+        return sole_active_supplier_id(db)
     raw = data.get("supplier_id")
     if raw in (None, "", "0"):
         return None
@@ -123,8 +127,46 @@ def stock_extra():
         "SELECT c.id, c.name, c.damaged_qty, COALESCE((SELECT SUM(amount_paise) FROM cylinder_deposits d "
         "WHERE d.cylinder_type_id=c.id AND d.kind='cancelled'),0) AS lost FROM cylinder_types c "
         "WHERE c.active=1 AND c.damaged_qty>0 ORDER BY c.sort_order, c.id")]
+    # Each cancelled deposit row created by damaged_add() is one damage batch.
+    # A batch remains selectable until all its damaged cylinders have been dispatched.
+    dispatch_options = []
+    physical_remaining = {
+        r["id"]: r["damaged_qty"]
+        for r in db.execute("SELECT id, damaged_qty FROM cylinder_types WHERE active=1")
+    }
+    damage_batches = db.execute(
+        "SELECT d.id AS damage_event_id, d.cylinder_type_id, c.name, "
+        "d.supplier_id, s.name AS supplier_name, d.qty, d.amount_paise, d.created_at, "
+        "COALESCE((SELECT SUM(di.qty) FROM damaged_cylinder_dispatch_items di "
+        "          WHERE di.damage_event_id=d.id),0) AS dispatched_qty "
+        "FROM cylinder_deposits d "
+        "JOIN cylinder_types c ON c.id=d.cylinder_type_id "
+        "LEFT JOIN suppliers s ON s.id=d.supplier_id "
+        "WHERE d.kind='cancelled' AND c.active=1 "
+        "ORDER BY d.created_at, d.id"
+    ).fetchall()
+    for r in damage_batches:
+        batch_remaining = max(0, r["qty"] - r["dispatched_qty"])
+        # Do not offer more cylinders than the current damaged stock count.
+        available = min(batch_remaining, physical_remaining.get(r["cylinder_type_id"], 0))
+        if available <= 0:
+            continue
+        per_cylinder = (r["amount_paise"] + (r["qty"] // 2)) // r["qty"] if r["qty"] else 0
+        dispatch_options.append({
+            "damage_event_id": r["damage_event_id"],
+            "cylinder_type_id": r["cylinder_type_id"],
+            "name": r["name"],
+            "supplier_id": r["supplier_id"],
+            "supplier_name": r["supplier_name"],
+            "remaining_qty": available,
+            "deposit_reference": to_rupees(per_cylinder),
+            "damaged_at": r["created_at"],
+        })
+        physical_remaining[r["cylinder_type_id"]] -= available
+
     return jsonify({
         "cylinders": cylinders, "damaged": damaged,
+        "damaged_dispatch_options": dispatch_options,
         "suppliers": [{"id": r["id"], "name": r["name"]} for r in db.execute(
             "SELECT id, name FROM suppliers WHERE active=1 ORDER BY name COLLATE NOCASE")],
         "deposits": {"paid": to_rupees(totals.get("paid", 0)), "cancelled": to_rupees(totals.get("cancelled", 0)),
@@ -230,6 +272,118 @@ def damaged_add():
                 _take_empty(db, tid, supplier_id, qty)
             _deposit_event(db, tid, supplier_id, "cancelled", qty, qty * dep, "Cylinder damaged")
     return jsonify({"ok": True})
+
+
+@api_bp.post("/stock/damaged/send-back")
+def damaged_send_back():
+    """Record physical dispatch of already-damaged cylinders; no deposit money moves here."""
+    data = body()
+    dispatch_date = day_field(data, "date", "Dispatch date")
+    note = text(data, "note", "Note", max_len=200)
+    items = data.get("items")
+    if not isinstance(items, list) or not items:
+        raise ApiError("Select at least one damaged-cylinder row to send back.")
+
+    db = get_db()
+    with transaction(db):
+        parsed = []
+        seen_events = set()
+        qty_by_type = {}
+
+        # Validate every selected row before writing anything.
+        for item in items:
+            if not isinstance(item, dict):
+                raise ApiError("Invalid damaged-cylinder dispatch row.")
+
+            event_id = int_field(item.get("damage_event_id"), "Damage record", minimum=1)
+            if event_id in seen_events:
+                raise ApiError("A damaged-cylinder row was selected more than once.", 409)
+            seen_events.add(event_id)
+
+            event = db.execute(
+                "SELECT d.id, d.cylinder_type_id, d.qty, d.amount_paise, "
+                "COALESCE((SELECT SUM(di.qty) FROM damaged_cylinder_dispatch_items di "
+                "          WHERE di.damage_event_id=d.id),0) AS dispatched_qty "
+                "FROM cylinder_deposits d WHERE d.id=? AND d.kind='cancelled'",
+                (event_id,),
+            ).fetchone()
+            if not event:
+                raise ApiError("This damaged-cylinder record was not found.", 404)
+            if event["qty"] <= 0:
+                raise ApiError("This damaged-cylinder record has an invalid quantity.", 409)
+
+            qty = int_field(item.get("qty"), "Dispatch quantity", field="qty", minimum=1, maximum=1_000_000)
+            remaining = event["qty"] - event["dispatched_qty"]
+            if qty > remaining:
+                raise ApiError(f"Only {max(0, remaining)} cylinder(s) remain in this damaged batch.", 409)
+
+            tid = event["cylinder_type_id"]
+            _cylinder(db, tid)
+            supplier_id = _optional_supplier(db, item)  # destination; does not alter the original damage event
+
+            if item.get("deposit_reference") in (None, ""):
+                deposit_reference = (event["amount_paise"] + (event["qty"] // 2)) // event["qty"]
+            else:
+                deposit_reference = money_field(
+                    item, "deposit_reference", "Deposit reference", allow_zero=True
+                )
+
+            parsed.append({
+                "event_id": event_id,
+                "cylinder_type_id": tid,
+                "qty": qty,
+                "supplier_id": supplier_id,
+                "deposit_reference_paise": deposit_reference,
+            })
+            qty_by_type[tid] = qty_by_type.get(tid, 0) + qty
+
+        # Several damage batches can refer to the same cylinder size.
+        # Their combined dispatch must still fit the current damaged stock.
+        for tid, qty in qty_by_type.items():
+            cylinder = _cylinder(db, tid)
+            if qty > cylinder["damaged_qty"]:
+                raise ApiError(
+                    f"Only {cylinder['damaged_qty']} damaged cylinder(s) of {cylinder['name']} are currently in stock.",
+                    409,
+                )
+
+        dispatch_id = db.execute(
+            "INSERT INTO damaged_cylinder_dispatches(dispatch_date, note) VALUES(?,?)",
+            (dispatch_date, note),
+        ).lastrowid
+
+        for item in parsed:
+            tid = item["cylinder_type_id"]
+            qty = item["qty"]
+            sid = item["supplier_id"]
+            supplier_name = _supplier(db, sid)["name"] if sid is not None else None
+
+            db.execute(
+                "INSERT INTO damaged_cylinder_dispatch_items "
+                "(dispatch_id, damage_event_id, cylinder_type_id, supplier_id, qty, deposit_reference_paise) "
+                "VALUES(?,?,?,?,?,?)",
+                (dispatch_id, item["event_id"], tid, sid, qty, item["deposit_reference_paise"]),
+            )
+
+            changed = db.execute(
+                "UPDATE cylinder_types SET damaged_qty=damaged_qty-? "
+                "WHERE id=? AND damaged_qty>=?",
+                (qty, tid, qty),
+            ).rowcount
+            if not changed:
+                raise ApiError("Damaged stock changed while this dispatch was being saved. Reload and try again.", 409)
+
+            movement_note = "Damaged cylinders sent back"
+            if supplier_name:
+                movement_note += f" to {supplier_name}"
+            if note:
+                movement_note += f" · {note}"
+            _movement(
+                db, tid, "damaged_send_back", ref_id=dispatch_id,
+                damaged=-qty, note=movement_note,
+            )
+
+    return jsonify({"ok": True, "dispatch_id": dispatch_id, "date": dispatch_date, "items": len(parsed)})
 
 
 # ---------- empty cylinders sent back to the supplier ----------
