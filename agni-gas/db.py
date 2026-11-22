@@ -46,6 +46,10 @@ def init_db(path: str | None = None) -> None:
                     " purchase_price_paise, security_paise, sort_order) VALUES (?,?,?,?,?,?,?)",
                     (name, kg, sale * 100, whole * 100, buy * 100, sec * 100, i),
                 )
+        # v0.4: first start with stock lots - existing full stock becomes an "opening stock" lot.
+        if conn.execute("SELECT COUNT(*) FROM stock_lots").fetchone()[0] == 0:
+            import lots
+            lots.create_opening_lots(conn)
         conn.commit()
     finally:
         conn.close()

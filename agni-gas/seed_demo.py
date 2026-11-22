@@ -59,6 +59,8 @@ def seed(conn):
     conn.execute(
         "INSERT INTO cylinder_ledger (customer_id, cylinder_type_id, delta, ref_type, entry_date)"
         " VALUES (?,?,?,?,?)", (ids["harry"], _type_id(conn, "45.4 kg"), 1, "opening", today.isoformat()))
+    import lots
+    lots.create_opening_lots(conn)   # the starting stock becomes opening lots
     conn.commit()
 
 

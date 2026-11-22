@@ -244,3 +244,37 @@ CREATE TABLE IF NOT EXISTS catalog_stock_movements (
     note                 TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_catalog_stock_item ON catalog_stock_movements(item_id, moved_at);
+
+-- Stock lots (FIFO). One row per purchase of full cylinders: how many, at what price, and how
+-- many are still on the shelf. Sales take from the oldest lot first, so profit stays correct
+-- when the buying price changes. purchase_id is the "pid"; NULL for opening stock.
+CREATE TABLE IF NOT EXISTS stock_lots (
+    id               INTEGER PRIMARY KEY,
+    cylinder_type_id INTEGER NOT NULL REFERENCES cylinder_types(id),
+    purchase_id      INTEGER REFERENCES purchases(id),
+    source           TEXT NOT NULL DEFAULT 'purchase' CHECK (source IN ('purchase', 'opening', 'adjustment')),
+    lot_date         TEXT NOT NULL,
+    qty_in           INTEGER NOT NULL CHECK (qty_in > 0),
+    qty_left         INTEGER NOT NULL CHECK (qty_left >= 0),
+    unit_cost_paise  INTEGER NOT NULL DEFAULT 0,
+    created_at       TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_stock_lots_fifo ON stock_lots(cylinder_type_id, qty_left, lot_date, id);
+CREATE INDEX IF NOT EXISTS idx_stock_lots_purchase ON stock_lots(purchase_id);
+
+-- Which lots a sale (or any document) took cylinders from, and at what cost.
+-- Never deleted: a cancelled sale marks its rows 'reversed' and the lots get their cylinders back.
+-- lot_id is NULL only for stock that was never recorded as a lot.
+CREATE TABLE IF NOT EXISTS lot_consumptions (
+    id               INTEGER PRIMARY KEY,
+    lot_id           INTEGER REFERENCES stock_lots(id),
+    cylinder_type_id INTEGER NOT NULL REFERENCES cylinder_types(id),
+    ref_type         TEXT NOT NULL,
+    ref_id           INTEGER NOT NULL,
+    qty              INTEGER NOT NULL CHECK (qty > 0),
+    unit_cost_paise  INTEGER NOT NULL DEFAULT 0,
+    status           TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'reversed')),
+    created_at       TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_lot_consumptions_ref ON lot_consumptions(ref_type, ref_id);
+CREATE INDEX IF NOT EXISTS idx_lot_consumptions_lot ON lot_consumptions(lot_id);

@@ -40,6 +40,7 @@ Data lives in `./data/agni.db` during development or `%APPDATA%\AgniGas` in the 
 | Supplier profile, ledger, payments and supplied-item links | Done | Done |
 | Purchase entry, history, detail and supplier-bill attachment | Done | Done |
 | Stock & Price, damaged cylinders and master-item management | To be built | Catalogue listing and purchase stock updates exist |
+| Stock lots (oldest-first cost tracking) | — | Done: purchases create lots, `/api/stock-lots`; sales will consume them |
 | Sales, tax invoice and cancellation | To be built | To be built |
 | Reports (PDF and Excel) | To be built | To be built |
 | Data & Backup (manual restore/import/export) | To be built | Daily automatic backup done |
@@ -56,6 +57,21 @@ Data lives in `./data/agni.db` during development or `%APPDATA%\AgniGas` in the 
 - A purchase stores the quantities/rates used at the time and any immediate payment. The supplier's original invoice is optional at registration and can be attached or replaced later from the purchase detail screen (PDF/image up to 5 MB). The app never issues a bill or invoice to the supplier.
 - Full cylinders received increase full stock. Empty cylinders returned to the supplier reduce available empty stock and are not included in the purchase subtotal. Newly purchased empty cylinders increase empty stock and use the configured cylinder security price.
 - GST is calculated on the purchase subtotal. Remaining due is payable later through the supplier ledger.
+
+## Stock lots — cost tracking, oldest first (FIFO)
+
+The agency's profit must not change when the buying price changes. A cylinder bought at 1,300 and sold at 1,500 is a 200 profit forever, even if the next purchase is at 1,400.
+
+- **Every purchase of full cylinders creates a lot** (`stock_lots`): the purchase it came from (its "pid", `purchase_id`), the date, how many were bought (`qty_in`), how many are still on the shelf (`qty_left`) and the price paid per cylinder (`unit_cost_paise`). Refills and brand-new full cylinders both create full cylinders, so both go into the lot at the purchase rate.
+- **Sales take from the oldest lot first** (by purchase date, then entry order). Nothing else decides the order. A purchase entered late but dated earlier is still older.
+- **Every sale records which lots it took from and at what cost** (`lot_consumptions`). Profit of a sale = selling price − recorded cost. Today's buying price is never used for old cylinders, so old profit never changes.
+- **Cancelling a sale** marks its rows `reversed` and puts the cylinders back into the same lots (nothing is deleted).
+- **Existing stock** at the time tracking starts becomes one *opening stock* lot per size, at that size's saved buying price. Opening stock is always sold before purchases.
+- If the lots ever run short (stock added by hand without a lot) the missing cylinders are costed at the size's latest buying price and saved with no lot, so a sale never fails because of tracking.
+- `cylinder_types.full_qty` stays as the quick on-hand count the screens read. The lots must always add up to it; lots are the cost record, not a second stock count.
+- **Not in the cost yet:** deposits (they depend on the damaged-cylinder/security rules still to be decided) and empty cylinders (they carry no gas cost).
+- Code: `lots.py` (`add_lot`, `consume_fifo`, `restore`, `cost_of`, `create_opening_lots`). Read-only API: `GET /api/stock-lots?cylinder_type_id=&open=1` lists lots oldest first with the supplier, purchase number, cost and stock value left. This is also the table the Excel export will use.
+- **Rules for code still to be written:** Sales must call `lots.consume_fifo(db, type_id, qty, "sale", sale_id)` for every full cylinder that leaves, and `lots.restore(db, "sale", sale_id)` when cancelling. Stock & Price "Adjust stock" must add a lot (`source='adjustment'`) when it adds full cylinders and consume from lots when it removes them. Cancelling a purchase (not built yet) must remove its lot only if none of it has been sold.
 
 ## Deliberate scope boundaries
 

@@ -8,6 +8,7 @@ from io import BytesIO
 from decimal import Decimal, InvalidOperation
 from flask import jsonify, request, send_file
 
+import lots
 from db import get_db, next_number, transaction
 from money import gst_paise, to_rupees
 from . import api_bp
@@ -330,6 +331,8 @@ def purchase_create():
                 "INSERT INTO stock_movements(cylinder_type_id,ref_type,ref_id,full_delta,empty_delta,note) VALUES(?,?,?,?,?,?)",
                 (item["id"],"purchase",pid,item["full_in"],item["new_empty"]-item["empty_out"],f"Purchase {number}"),
             )
+            # FIFO: remember what these full cylinders cost, so later price changes never rewrite old profit.
+            lots.add_lot(db, item["id"], item["full_in"], item["rate"], day, pid)
             if update_prices and item["full_in"]:
                 db.execute(
                     "INSERT INTO supplier_items(supplier_id,cylinder_type_id,purchase_price_paise) VALUES(?,?,?) "
@@ -462,3 +465,38 @@ def purchase_attachment(pid):
                          download_name=row["supplier_bill_name"], as_attachment=False, max_age=0)
     response.headers["X-Content-Type-Options"] = "nosniff"
     return response
+
+
+# ---------- Stock lots (FIFO) ----------
+@api_bp.get("/stock-lots")
+def stock_lots_list():
+    """Every lot of full cylinders: bought when, from whom, at what price, how many left.
+
+    ?cylinder_type_id=  limit to one size      ?open=1  only lots that still have cylinders
+    Oldest first, which is the order cylinders are sold in.
+    """
+    where, params = [], []
+    tid = request.args.get("cylinder_type_id")
+    if tid:
+        where.append("l.cylinder_type_id=?")
+        params.append(int_field(tid, "Cylinder type", minimum=1))
+    if request.args.get("open") == "1":
+        where.append("l.qty_left>0")
+    rows = get_db().execute(
+        "SELECT l.*, ct.name AS cylinder, pu.number AS purchase_number, s.name AS supplier "
+        "FROM stock_lots l JOIN cylinder_types ct ON ct.id=l.cylinder_type_id "
+        "LEFT JOIN purchases pu ON pu.id=l.purchase_id LEFT JOIN suppliers s ON s.id=pu.supplier_id"
+        + (" WHERE " + " AND ".join(where) if where else "") +
+        " ORDER BY l.cylinder_type_id, CASE l.source WHEN 'opening' THEN 0 ELSE 1 END, l.lot_date, l.id", params
+    ).fetchall()
+    out, value_left = [], 0
+    for r in rows:
+        left_value = r["qty_left"] * r["unit_cost_paise"]
+        value_left += left_value
+        out.append({
+            "id": r["id"], "cylinder_type_id": r["cylinder_type_id"], "cylinder": r["cylinder"],
+            "source": r["source"], "purchase_id": r["purchase_id"], "purchase_number": r["purchase_number"],
+            "supplier": r["supplier"], "date": r["lot_date"], "qty_in": r["qty_in"], "qty_left": r["qty_left"],
+            "unit_cost": to_rupees(r["unit_cost_paise"]), "value_left": to_rupees(left_value),
+        })
+    return jsonify({"lots": out, "stock_value": to_rupees(value_left)})
