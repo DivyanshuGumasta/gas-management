@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/customers.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/suppliers_purchases.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/sales.css') }}">
+
+<div id="sl-error" class="banner banner-error" hidden><span></span><button class="btn btn-ghost btn-sm" id="sl-retry" type="button">Retry</button></div>
+
+<div class="page-head">
+  <h1 class="page-title">Sales</h1>
+  <div class="head-actions" id="sl-head-actions">
+    <div class="menu-wrap" data-scope="sales">
+      <button class="btn btn-white" data-menu-toggle type="button"><i data-cicon="download"></i>Export<i data-cicon="chevronDown"></i></button>
+      <div class="menu" hidden>
+        <button type="button" data-export="pdf">Download PDF</button>
+        <button type="button" data-export="excel">Download Excel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="tabs" role="tablist">
+  <button class="tab on" id="sl-tab-history" role="tab" type="button">Sales history</button>
+  <button class="tab" id="sl-tab-new" role="tab" type="button">New sale</button>
+</div>
+
+<!-- ============ Sales history ============ -->
+<section id="sl-view-history">
+<div class="toolbar">
+  <div class="chips" id="sl-chips">
+    <button class="chip on" data-range="today" type="button">Today</button>
+    <button class="chip" data-range="7d" type="button">Last 7 days</button>
+    <button class="chip" data-range="month" type="button">This month</button>
+    <button class="chip" data-range="all" type="button">All</button>
+    <button class="chip" data-range="custom" type="button">Custom</button>
+  </div>
+  <label class="search"><i data-icon="search"></i>
+    <input type="search" id="sl-search" placeholder="Search customer or bill no." autocomplete="off"></label>
+</div>
+<div class="date-filter sl-custom" id="sl-custom" hidden>
+  <span>From</span><input type="date" id="sl-from"><span>To</span><input type="date" id="sl-to">
+</div>
+
+<div class="sl-stats">
+  <div class="sl-stat"><small>Sales</small><b id="sl-total">Rs 0</b><span id="sl-bills">0 bills</span></div>
+  <div class="sl-stat"><small>Cylinders</small><b id="sl-cyl">0</b><span>full sold</span></div>
+  <div class="sl-stat"><small>Udhaar</small><b class="red" id="sl-udhaar">Rs 0</b><span>on these bills</span></div>
+</div>
+
+<div class="list-card" id="sl-list"></div>
+</section>
+
+<!-- ============ New sale ============ -->
+<section id="sl-view-new" hidden>
+<div id="sn-error" class="banner banner-error" hidden><span id="sn-error-text"></span></div>
+
+<form id="sn-form" novalidate>
+  <div class="pn-layout">
+    <section class="pn-left">
+      <div class="sn-customer-row">
+        <button class="cust-pick pn-supplier-picker" id="sn-cust-pick" type="button">
+          <span class="avatar" id="sn-cust-avatar">W</span>
+          <span class="cp-main"><small>Customer</small><b id="sn-cust-name">Walk-in customer</b><small id="sn-cust-meta">Cash sale, no udhaar</small></span>
+          <span id="sn-cust-balance" class="bal bal-clear"></span>
+          <span class="pn-picker-chevron"><i data-cicon="chevronsUpDown"></i></span>
+        </button>
+        <button class="btn btn-white" id="sn-add-cust" type="button"><i data-icon="userPlus"></i>Add customer</button>
+      </div>
+      <button class="link-btn sn-walkin" id="sn-walkin" type="button" hidden>Use walk-in customer instead</button>
+
+      <div class="pn-section-head"><h2>What are you selling?</h2><small>Tap price to change</small></div>
+      <div class="pn-items" id="sn-cylinders"><div class="pn-empty">Loading cylinders…</div></div>
+
+      <section class="pn-other-panel" id="sn-items-panel" hidden>
+        <div class="pn-section-head"><h2>Other items</h2><small>Tap price to change</small></div>
+        <div class="sn-goods" id="sn-goods"></div>
+      </section>
+    </section>
+
+    <aside class="pn-right">
+      <div class="pn-section-head"><h2>Payment</h2></div>
+      <div class="pn-panel pn-payment-panel">
+        <div class="two">
+          <label class="field"><span>Discount (optional)</span><div class="pn-amount"><i>Rs</i><input class="input" id="sn-discount" inputmode="decimal" placeholder="0"></div></label>
+          <label class="field"><span>Date</span><input class="input" id="sn-date" type="date"></label>
+        </div>
+        <div class="two">
+          <label class="field"><span>Payment</span>
+            <select class="select" id="sn-payment"><option value="paid">Paid</option><option value="partial">Part paid</option><option value="credit">Udhaar (pay later)</option></select></label>
+          <label class="field"><span>Received in</span>
+            <select class="select" id="sn-received"><option value="cash">Cash in hand</option><option value="bank">Bank / UPI</option></select></label>
+        </div>
+        <label class="field"><span id="sn-paid-label">Amount paid now</span><div class="pn-amount"><i>Rs</i><input class="input" id="sn-paid" inputmode="decimal" placeholder="0" disabled></div>
+          <small class="hint" id="sn-pay-hint">Walk-in sales are cash only. Select a customer to give udhaar.</small></label>
+        <div class="two">
+          <label class="field"><span>GST rate (%)</span><div class="pn-suffix-input"><input class="input" id="sn-gst" type="number" min="0" max="100" step="0.01" value="0"><i>%</i></div></label>
+          <label class="field"><span>GST amount</span><div class="pn-amount pn-readonly"><i>Rs</i><input class="input" id="sn-gst-amount" value="0.00" readonly></div></label>
+        </div>
+        <label class="field"><span>Note (optional)</span><textarea class="textarea" id="sn-note" maxlength="500"></textarea></label>
+        <div class="pn-totals">
+          <div><span>Subtotal</span><b id="sn-subtotal">Rs 0</b></div>
+          <div class="sn-disc-row" id="sn-disc-row" hidden><span>Discount</span><b id="sn-disc-show">- Rs 0</b></div>
+          <div><span>GST (<i id="sn-gst-label">0</i>%)</span><b id="sn-gst-show">Rs 0</b></div>
+          <div class="sn-back-row" id="sn-back-row" hidden><span>Deposit given back</span><b id="sn-back-show">- Rs 0</b></div>
+          <div class="pn-grand"><span id="sn-total-label">Total (incl. GST)</span><b id="sn-total">Rs 0</b></div>
+          <div class="sn-due-row" id="sn-due-row" hidden><span>Udhaar on this bill</span><b id="sn-due">Rs 0</b></div>
+        </div>
+        <button class="btn btn-orange btn-block pn-save" id="sn-save" type="submit" disabled><i data-cicon="check"></i>Save sale</button>
+      </div>
+    </aside>
+  </div>
+</form>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/customers_common.js') }}"></script>
+<script src="{{ url_for('static', filename='js/sales_new.js') }}"></script>
+<script src="{{ url_for('static', filename='js/sales.js') }}"></script>
+{% endblock %}

@@ -5,14 +5,13 @@ Pages remain data-free; JavaScript talks to the API through static/js/api.js.
 """
 import os
 
-from flask import Flask, redirect, render_template
+from flask import Flask, redirect, render_template, request
 
 from paths import resource_path
 
 PAGES = {
     "/": ("dashboard.html", "home", "Home", ""),
-    "/sales": ("placeholder.html", "sales", "Sales", "Sales list, filters and export"),
-    "/sales/new": ("placeholder.html", "sales", "New Sale", "Cylinder sale form, payment and GST"),
+    "/sales": ("sales.html", "sales", "Sales", ""),
     "/customers": ("customers.html", "customers", "Customers", "Customer list, ledger, receive payment and payment history"),
     "/suppliers-purchases": ("suppliers_purchases.html", "suppliers_purchases", "Suppliers & Purchases", ""),
     "/purchases/new": ("purchase_new.html", "suppliers_purchases", "New purchase", "Record supplier invoice and incoming stock"),
@@ -71,8 +70,11 @@ def create_app() -> Flask:
     app.add_url_rule("/customers/<int:cid>", "page_customer_detail",
                      make_view("customer_detail.html", "customers", "Customer", ""))
     app.add_url_rule("/udhaar", "page_udhaar", lambda: redirect("/customers"))
+    # "New sale" is the second tab on the Sales page; old links to /sales/new still work.
+    app.add_url_rule("/sales/new", "page_sales_new", lambda: redirect(
+        "/sales?tab=new" + ("&" + request.query_string.decode() if request.query_string else "")))
     app.add_url_rule("/sales/<int:sale_id>", "page_sale_detail",
-                     make_view("placeholder.html", "sales", "Sale receipt", "Tax invoice, print / WhatsApp, cancel bill"))
+                     make_view("sale_detail.html", "sales", "Sale receipt", ""))
 
     return app
 

@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/customers.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/sales.css') }}">
+
+<div id="rc-error" class="banner banner-error" hidden><span></span><button class="btn btn-ghost btn-sm" id="rc-retry" type="button">Retry</button></div>
+<div id="rc-main" hidden>
+  <div class="page-head">
+    <div class="title-block">
+      <a class="back-btn" href="/sales" aria-label="Back to sales"><i data-cicon="chevronLeft"></i></a>
+      <div><h1 id="rc-title">Sale</h1><small id="rc-sub"></small></div>
+    </div>
+    <button class="btn btn-danger-outline" id="rc-cancel" type="button">⊘ Cancel bill</button>
+  </div>
+
+  <div class="rc-wrap">
+    <div class="rc-banner rc-saved" id="rc-saved" hidden><i data-cicon="check"></i>Sale saved. Print or share the receipt.</div>
+    <div class="rc-banner rc-void" id="rc-void" hidden>⊘ Bill cancelled. This receipt is no longer valid.</div>
+
+    <article class="rc-paper" id="rc-paper">
+      <div class="rc-stamp" id="rc-stamp" hidden>CANCELLED</div>
+      <h2 class="rc-biz" data-biz-name>Agni Gas Agency</h2>
+      <div class="rc-sep"></div>
+      <div class="rc-kind">SALE RECEIPT</div>
+      <div class="rc-sep"></div>
+      <div class="rc-meta">
+        <div><span>Receipt #</span><b id="rc-number"></b></div>
+        <div><span>Date</span><b id="rc-date"></b></div>
+        <div><span>Customer</span><b id="rc-customer"></b></div>
+      </div>
+      <div class="rc-sep"></div>
+      <table class="rc-table">
+        <thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Rate</th><th class="num">Amount</th></tr></thead>
+        <tbody id="rc-lines"></tbody>
+      </table>
+      <div class="rc-sep"></div>
+      <div class="rc-sums" id="rc-sums"></div>
+      <div class="rc-sep"></div>
+      <p class="rc-thanks">Thank you!</p>
+      <div class="rc-sep"></div>
+      <p class="rc-credit">Developed by Divyanshu, Designed by Harsh</p>
+    </article>
+
+    <div class="rc-actions">
+      <button class="btn btn-dark" id="rc-print" type="button">🖶 Print</button>
+      <button class="btn btn-whatsapp" id="rc-wa" type="button">WhatsApp</button>
+      <a class="btn btn-orange" href="/sales?tab=new"><i data-icon="plus"></i>New Sale</a>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/customers_common.js') }}"></script>
+<script src="{{ url_for('static', filename='js/sale_detail.js') }}"></script>
+{% endblock %}
