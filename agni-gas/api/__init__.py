@@ -16,4 +16,4 @@ def bad_request(err):
 
 
 # Keep one registered supplier route implementation; people.py was the old picker-only API.
-from . import customers, dashboard, payments, suppliers, purchases  # noqa: E402,F401
+from . import customers, dashboard, payments, suppliers, purchases, stock, stock_suppliers  # noqa: E402,F401

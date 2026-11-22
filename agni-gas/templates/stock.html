@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/customers.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/stock.css') }}">
+
+<div id="st-error" class="banner banner-error" hidden>
+  <span></span>
+  <button class="btn btn-ghost btn-sm" id="st-retry" type="button">Retry</button>
+</div>
+
+<div class="page-head">
+  <div>
+    <h1 class="page-title">Stock &amp; Price</h1>
+    <p class="st-sub">Gas cylinders and other items like gas pipes, stoves and regulators</p>
+  </div>
+  <div class="head-actions">
+    <div class="menu-wrap" data-scope="stock">
+      <button class="btn btn-white" data-menu-toggle type="button"><i data-cicon="download"></i>Export<i data-cicon="chevronDown"></i></button>
+      <div class="menu" hidden>
+        <button type="button" data-export="pdf">Download PDF</button>
+        <button type="button" data-export="excel">Download Excel</button>
+      </div>
+    </div>
+    <button class="btn btn-white" id="st-add-item-top" type="button"><i data-icon="plus"></i>Add item</button>
+    <a class="btn btn-dark" href="/purchases/new"><i data-icon="cart"></i>New purchase</a>
+  </div>
+</div>
+
+<!-- numbers -->
+<div class="stat-grid st-stats">
+  <div class="stat"><span class="stat-icon slate"><i data-icon="cylinder"></i></span><div><span class="stat-value" id="st-ready">0</span></div><span class="stat-label">Ready to sell</span></div>
+  <div class="stat"><span class="stat-icon amber"><i data-icon="cylinder"></i></span><div><span class="stat-value" id="st-refill">0</span></div><span class="stat-label">To refill</span></div>
+  <div class="stat"><span class="stat-icon purple"><i data-icon="users"></i></span><div><span class="stat-value" id="st-with">0</span></div><span class="stat-label">With customers</span></div>
+  <div class="stat"><span class="stat-icon green"><i data-icon="cylinder"></i></span><div><span class="stat-value" id="st-total">0</span></div><span class="stat-label">Total owned</span></div>
+  <div class="stat"><span class="stat-icon teal"><i data-icon="cart"></i></span><div><span class="stat-value" id="st-other">0</span></div><span class="stat-label">Other items</span></div>
+</div>
+<div class="sum-grid">
+  <div class="sum-card"><div class="label">Stock at cost</div><div class="value green" id="st-cost">Rs 0</div></div>
+  <div class="sum-card"><div class="label">Stock at sale price</div><div class="value orange" id="st-value">Rs 0</div></div>
+</div>
+
+<!-- damaged -->
+<section class="st-damaged card">
+  <div class="st-damaged-head">
+    <div>
+    <div class="card-title">Damaged cylinders</div>
+      <div class="card-sub">Cylinders that can no longer be used. Their security deposit is cancelled.</div>
+    </div>
+    <span class="st-count" id="st-damaged-badge">0 damaged</span>
+  </div>
+  <div class="st-damaged-body">
+    <div class="st-dmg-list" id="st-damaged-list"></div>
+    <button class="btn btn-dark" type="button" id="st-damaged-add"><i data-icon="plus"></i>Add damaged cylinder</button>
+  </div>
+  <p class="st-deposit-line" id="st-deposit-line"></p>
+</section>
+
+<!-- cylinders -->
+<div class="st-section-head">
+  <h2>Cylinder stock &amp; pricing</h2>
+  <button class="btn btn-dark" id="st-add-cylinder" type="button"><i data-icon="plus"></i>Add cylinder</button>
+</div>
+<div class="st-grid" id="st-cylinders"></div>
+
+<!-- other items -->
+<div class="st-section-head">
+  <h2>Other items</h2>
+  <button class="btn btn-white" id="st-add-item" type="button"><i data-icon="plus"></i>Add item</button>
+</div>
+<div class="st-grid" id="st-items"></div>
+
+<!-- history -->
+<div class="st-section-head">
+  <h2>Stock history</h2>
+  <div class="head-actions">
+    <button class="btn btn-white" id="st-filter" type="button">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18l-7 8v6l-4 2v-8z"/></svg>Filter</button>
+    <div class="menu-wrap" data-scope="stock-history">
+      <button class="btn btn-white" data-menu-toggle type="button"><i data-cicon="download"></i>Export<i data-cicon="chevronDown"></i></button>
+      <div class="menu" hidden>
+        <button type="button" data-export="pdf">Download PDF</button>
+        <button type="button" data-export="excel">Download Excel</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="chips st-chips" id="st-chips"></div>
+<div class="list-card st-history" id="st-history"></div>
+<div class="st-more"><button class="btn btn-white" id="st-more" type="button" hidden>Show older</button></div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/customers_common.js') }}"></script>
+<script src="{{ url_for('static', filename='js/stock.js') }}"></script>
+<script src="{{ url_for('static', filename='js/stock_extra.js') }}"></script>
+{% endblock %}

@@ -203,6 +203,7 @@ CREATE TABLE IF NOT EXISTS catalog_items (
     unit                  TEXT NOT NULL DEFAULT 'pcs',
     purchase_price_paise  INTEGER NOT NULL DEFAULT 0,
     sale_price_paise      INTEGER NOT NULL DEFAULT 0,
+    wholesale_price_paise INTEGER NOT NULL DEFAULT 0,
     stock_qty_milli       INTEGER NOT NULL DEFAULT 0,
     active                INTEGER NOT NULL DEFAULT 1,
     created_at            TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
@@ -278,3 +279,32 @@ CREATE TABLE IF NOT EXISTS lot_consumptions (
 );
 CREATE INDEX IF NOT EXISTS idx_lot_consumptions_ref ON lot_consumptions(ref_type, ref_id);
 CREATE INDEX IF NOT EXISTS idx_lot_consumptions_lot ON lot_consumptions(lot_id);
+
+-- Counted changes to an ordinary item's stock that did not come from a purchase
+-- (starting stock and "Adjust stock" on the Stock & Price screen). Purchases keep using
+-- catalog_stock_movements. Never deleted.
+CREATE TABLE IF NOT EXISTS catalog_adjustments (
+    id                   INTEGER PRIMARY KEY,
+    item_id              INTEGER NOT NULL REFERENCES catalog_items(id),
+    moved_at             TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    kind                 TEXT NOT NULL DEFAULT 'adjustment' CHECK (kind IN ('adjustment', 'opening')),
+    quantity_delta_milli INTEGER NOT NULL,
+    note                 TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_catalog_adjustments_item ON catalog_adjustments(item_id, moved_at);
+
+-- Security deposits on cylinders, one row per event, never deleted.
+--   paid = new cylinders bought (written by a purchase)   cancelled = cylinder damaged, deposit lost
+--   refunded = good cylinders sent back to the supplier, deposit received
+CREATE TABLE IF NOT EXISTS cylinder_deposits (
+    id               INTEGER PRIMARY KEY,
+    cylinder_type_id INTEGER NOT NULL REFERENCES cylinder_types(id),
+    supplier_id      INTEGER REFERENCES suppliers(id),
+    kind             TEXT NOT NULL CHECK (kind IN ('paid', 'cancelled', 'refunded')),
+    qty              INTEGER NOT NULL,
+    amount_paise     INTEGER NOT NULL,
+    purchase_id      INTEGER REFERENCES purchases(id),
+    note             TEXT,
+    created_at       TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_cylinder_deposits ON cylinder_deposits(cylinder_type_id, supplier_id);

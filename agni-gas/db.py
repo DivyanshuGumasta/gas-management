@@ -46,10 +46,35 @@ def init_db(path: str | None = None) -> None:
                     " purchase_price_paise, security_paise, sort_order) VALUES (?,?,?,?,?,?,?)",
                     (name, kg, sale * 100, whole * 100, buy * 100, sec * 100, i),
                 )
+        # v0.4.2: ordinary items get a wholesale price.
+        if "wholesale_price_paise" not in [r[1] for r in conn.execute("PRAGMA table_info(catalog_items)")]:
+            conn.execute("ALTER TABLE catalog_items ADD COLUMN wholesale_price_paise INTEGER NOT NULL DEFAULT 0")
         # v0.4: first start with stock lots - existing full stock becomes an "opening stock" lot.
         if conn.execute("SELECT COUNT(*) FROM stock_lots").fetchone()[0] == 0:
             import lots
             lots.create_opening_lots(conn)
+
+        # v0.4.4: everything per supplier. Own deposit and empty count on the supplier link, supplier on each lot,
+        # and where a refunded deposit was received (cash / bank).
+        if "security_paise" not in [r[1] for r in conn.execute("PRAGMA table_info(supplier_items)")]:
+            conn.execute("ALTER TABLE supplier_items ADD COLUMN security_paise INTEGER")
+            conn.execute("UPDATE supplier_items SET security_paise=(SELECT security_paise FROM cylinder_types WHERE id=supplier_items.cylinder_type_id)")
+        if "empty_qty" not in [r[1] for r in conn.execute("PRAGMA table_info(supplier_items)")]:
+            conn.execute("ALTER TABLE supplier_items ADD COLUMN empty_qty INTEGER NOT NULL DEFAULT 0")
+        if "supplier_id" not in [r[1] for r in conn.execute("PRAGMA table_info(stock_lots)")]:
+            conn.execute("ALTER TABLE stock_lots ADD COLUMN supplier_id INTEGER REFERENCES suppliers(id)")
+        conn.execute("UPDATE stock_lots SET supplier_id=(SELECT supplier_id FROM purchases WHERE id=stock_lots.purchase_id) "
+                     "WHERE supplier_id IS NULL AND purchase_id IS NOT NULL")
+        if "received_in" not in [r[1] for r in conn.execute("PRAGMA table_info(cylinder_deposits)")]:
+            conn.execute("ALTER TABLE cylinder_deposits ADD COLUMN received_in TEXT")
+
+        # v0.4.3: deposits already paid on earlier purchases go into the deposit history (only when it is empty).
+        if conn.execute("SELECT COUNT(*) FROM cylinder_deposits").fetchone()[0] == 0:
+            conn.execute(
+                "INSERT INTO cylinder_deposits (cylinder_type_id, supplier_id, kind, qty, amount_paise, purchase_id, note) "
+                "SELECT i.cylinder_type_id, p.supplier_id, 'paid', i.new_full_qty + i.new_empty_qty, "
+                "(i.new_full_qty + i.new_empty_qty) * i.security_rate_paise, p.id, 'Purchase ' || p.number "
+                "FROM purchase_items i JOIN purchases p ON p.id = i.purchase_id WHERE i.new_full_qty + i.new_empty_qty > 0")
         conn.commit()
     finally:
         conn.close()

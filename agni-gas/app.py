@@ -16,7 +16,7 @@ PAGES = {
     "/customers": ("customers.html", "customers", "Customers", "Customer list, ledger, receive payment and payment history"),
     "/suppliers-purchases": ("suppliers_purchases.html", "suppliers_purchases", "Suppliers & Purchases", ""),
     "/purchases/new": ("purchase_new.html", "suppliers_purchases", "New purchase", "Record supplier invoice and incoming stock"),
-    "/stock": ("placeholder.html", "stock", "Stock & Price", "Cylinder stock, prices, damaged stock, history"),
+    "/stock": ("stock.html", "stock", "Stock & Price", "Cylinder stock, prices, damaged stock, history"),
     "/reports": ("placeholder.html", "reports", "Reports", "The five business reports, PDF and Excel export"),
     "/data": ("placeholder.html", "data", "Data & Backup", "Backup, restore, export and import"),
     "/help": ("placeholder.html", "help", "Help & support", "Support contacts"),

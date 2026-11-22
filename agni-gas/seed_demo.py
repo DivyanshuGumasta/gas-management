@@ -59,6 +59,18 @@ def seed(conn):
     conn.execute(
         "INSERT INTO cylinder_ledger (customer_id, cylinder_type_id, delta, ref_type, entry_date)"
         " VALUES (?,?,?,?,?)", (ids["harry"], _type_id(conn, "45.4 kg"), 1, "opening", today.isoformat()))
+    # a few ordinary items so the "Other items" cards on Stock & Price are not empty
+    for name, unit, qty, sale, wholesale, buy in [
+        ("Gas pipe", "m", 24, 120, 100, 80), ("Lighter", "pcs", 6, 350, 300, 260), ("Gas stove", "pcs", 2, 2200, 1900, 1700)]:
+        conn.execute(
+            "INSERT INTO catalog_items (name, unit, stock_qty_milli, sale_price_paise, wholesale_price_paise, purchase_price_paise)"
+            " VALUES (?,?,?,?,?,?)", (name, unit, qty * 1000, sale * 100, wholesale * 100, buy * 100))
+    for r in conn.execute("SELECT id, full_qty, empty_qty FROM cylinder_types WHERE full_qty>0 OR empty_qty>0").fetchall():
+        conn.execute("INSERT INTO stock_movements (cylinder_type_id, ref_type, full_delta, empty_delta, note) VALUES (?,?,?,?,?)",
+                     (r["id"], "opening", r["full_qty"], r["empty_qty"], "Starting stock"))
+    for r in conn.execute("SELECT id, stock_qty_milli FROM catalog_items WHERE stock_qty_milli>0").fetchall():
+        conn.execute("INSERT INTO catalog_adjustments (item_id, kind, quantity_delta_milli, note) VALUES (?,?,?,?)",
+                     (r["id"], "opening", r["stock_qty_milli"], "Starting stock"))
     import lots
     lots.create_opening_lots(conn)   # the starting stock becomes opening lots
     conn.commit()

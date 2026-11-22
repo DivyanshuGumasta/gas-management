@@ -90,14 +90,14 @@ def purchase_options():
     supplier_row(sid)
     rows = db.execute(
         "SELECT ct.id,ct.name,ct.full_qty,ct.empty_qty,ct.purchase_price_paise,ct.security_paise,"
-        "si.purchase_price_paise AS supplier_price FROM cylinder_types ct "
+        "si.purchase_price_paise AS supplier_price, COALESCE(si.security_paise,ct.security_paise) AS supplier_security FROM cylinder_types ct "
         "JOIN supplier_items si ON si.cylinder_type_id=ct.id AND si.supplier_id=? "
         "WHERE ct.active=1 ORDER BY ct.sort_order,ct.id", (sid,)
     ).fetchall()
     return jsonify([{
         "id": r["id"], "name": r["name"], "full_stock": r["full_qty"], "empty_stock": r["empty_qty"],
         "rate": to_rupees(r["supplier_price"]),
-        "security_rate": to_rupees(r["security_paise"]),
+        "security_rate": to_rupees(r["supplier_security"]),
     } for r in rows])
 
 
@@ -234,7 +234,8 @@ def purchase_create():
             raise ApiError(f"Enter a purchase rate for {ct['name']}.", field=f"rate_{tid}")
         # Deposit is editable per purchase line. Falls back to the saved deposit if not sent.
         if item.get("deposit") in (None, ""):
-            security_rate = ct["security_paise"]
+            own = db.execute("SELECT security_paise FROM supplier_items WHERE supplier_id=? AND cylinder_type_id=?", (sid, tid)).fetchone()
+            security_rate = ct["security_paise"] if own is None or own[0] is None else own[0]
         else:
             security_rate = money_field(item, "deposit", "Deposit", allow_zero=True)
         amount = full_in * rate + (new_full + new_empty) * security_rate
@@ -327,12 +328,22 @@ def purchase_create():
                 "UPDATE cylinder_types SET full_qty=full_qty+?, empty_qty=empty_qty-?+? WHERE id=?",
                 (item["full_in"],item["empty_out"],item["new_empty"],item["id"]),
             )
+            db.execute(   # this supplier's own empties (never below 0)
+                "UPDATE supplier_items SET empty_qty=MAX(0, empty_qty-?+?) WHERE supplier_id=? AND cylinder_type_id=?",
+                (item["empty_out"], item["new_empty"], sid, item["id"]),
+            )
             db.execute(
                 "INSERT INTO stock_movements(cylinder_type_id,ref_type,ref_id,full_delta,empty_delta,note) VALUES(?,?,?,?,?,?)",
                 (item["id"],"purchase",pid,item["full_in"],item["new_empty"]-item["empty_out"],f"Purchase {number}"),
             )
             # FIFO: remember what these full cylinders cost, so later price changes never rewrite old profit.
             lots.add_lot(db, item["id"], item["full_in"], item["rate"], day, pid)
+            db.execute("UPDATE stock_lots SET supplier_id=? WHERE purchase_id=? AND cylinder_type_id=?", (sid, pid, item["id"]))
+            if item["new_full"] or item["new_empty"]:      # deposit paid on brand-new cylinders
+                new_total = item["new_full"] + item["new_empty"]
+                db.execute(
+                    "INSERT INTO cylinder_deposits(cylinder_type_id,supplier_id,kind,qty,amount_paise,purchase_id,note) VALUES(?,?,?,?,?,?,?)",
+                    (item["id"], sid, "paid", new_total, new_total * item["security_rate"], pid, f"Purchase {number}"))
             if update_prices and item["full_in"]:
                 db.execute(
                     "INSERT INTO supplier_items(supplier_id,cylinder_type_id,purchase_price_paise) VALUES(?,?,?) "
@@ -342,6 +353,8 @@ def purchase_create():
                 db.execute("UPDATE cylinder_types SET purchase_price_paise=? WHERE id=?", (item["rate"],item["id"]))
             if update_prices and (item["new_full"] or item["new_empty"]):
                 db.execute("UPDATE cylinder_types SET security_paise=? WHERE id=?", (item["security_rate"],item["id"]))
+                db.execute("UPDATE supplier_items SET security_paise=? WHERE supplier_id=? AND cylinder_type_id=?",
+                           (item["security_rate"], sid, item["id"]))
         for item in wanted_catalog:
             # Verify the supplier-item link still exists while holding the write lock.
             link = db.execute(
