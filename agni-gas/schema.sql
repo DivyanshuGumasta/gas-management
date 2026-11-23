@@ -333,3 +333,62 @@ CREATE INDEX IF NOT EXISTS idx_damaged_dispatch_items_event
     ON damaged_cylinder_dispatch_items(damage_event_id);
 CREATE INDEX IF NOT EXISTS idx_damaged_dispatch_items_dispatch
     ON damaged_cylinder_dispatch_items(dispatch_id);
+
+
+-- v0.6: persistent customer invoice lines. Every printable detail is a snapshot.
+CREATE TABLE IF NOT EXISTS sale_lines (
+    id              INTEGER PRIMARY KEY,
+    sale_id         INTEGER NOT NULL REFERENCES sales(id),
+    line_no         INTEGER NOT NULL,
+    kind            TEXT NOT NULL,
+    action          TEXT,
+    cylinder_type_id INTEGER REFERENCES cylinder_types(id),
+    item_id         INTEGER REFERENCES catalog_items(id),
+    description     TEXT NOT NULL,
+    hsn             TEXT,
+    unit            TEXT NOT NULL DEFAULT 'NOS',
+    qty_milli       INTEGER NOT NULL DEFAULT 0,
+    rate_paise      INTEGER NOT NULL DEFAULT 0,
+    gross_paise     INTEGER NOT NULL DEFAULT 0,
+    discount_paise  INTEGER NOT NULL DEFAULT 0,
+    taxable_paise   INTEGER NOT NULL DEFAULT 0,
+    gst_rate_bp     INTEGER,
+    cgst_paise      INTEGER NOT NULL DEFAULT 0,
+    sgst_paise      INTEGER NOT NULL DEFAULT 0,
+    igst_paise      INTEGER NOT NULL DEFAULT 0,
+    amount_paise    INTEGER NOT NULL DEFAULT 0,
+    detail          TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_sale_lines_sale ON sale_lines(sale_id, line_no);
+
+-- Customer security deposits are independent of the agency's supplier deposits.
+-- received/refunded/forfeited rows are never deleted; a cancelled invoice reverses the row.
+CREATE TABLE IF NOT EXISTS customer_deposit_events (
+    id              INTEGER PRIMARY KEY,
+    customer_id     INTEGER NOT NULL REFERENCES customers(id),
+    cylinder_type_id INTEGER NOT NULL REFERENCES cylinder_types(id),
+    sale_id         INTEGER REFERENCES sales(id),
+    kind            TEXT NOT NULL CHECK (kind IN ('received','refunded','forfeited')),
+    qty             INTEGER NOT NULL DEFAULT 0,
+    amount_paise    INTEGER NOT NULL DEFAULT 0,
+    event_date      TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','reversed')),
+    note            TEXT,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_customer_deposits_customer
+    ON customer_deposit_events(customer_id, cylinder_type_id, status);
+CREATE INDEX IF NOT EXISTS idx_customer_deposits_sale ON customer_deposit_events(sale_id);
+
+-- Ordinary catalogue stock movements caused by sales and sale cancellations.
+CREATE TABLE IF NOT EXISTS catalog_sale_movements (
+    id                   INTEGER PRIMARY KEY,
+    sale_id              INTEGER NOT NULL REFERENCES sales(id),
+    item_id              INTEGER NOT NULL REFERENCES catalog_items(id),
+    moved_at             TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    quantity_delta_milli INTEGER NOT NULL,
+    kind                 TEXT NOT NULL CHECK (kind IN ('sale','sale_cancel')),
+    note                 TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_catalog_sale_movements_item
+    ON catalog_sale_movements(item_id, moved_at);

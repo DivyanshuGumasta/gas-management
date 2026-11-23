@@ -11,8 +11,8 @@ from db import get_db, transaction
 from money import format_inr, to_rupees
 
 from . import api_bp
-from .util import (RECEIVED_IN, ApiError, body, day_field, int_field, money_field,
-                   phone_field, text)
+from .util import (RECEIVED_IN, ApiError, body, day_field, gstin_field, int_field,
+                   money_field, phone_field, state_code_field, text)
 
 BALANCE_SQL = """c.opening_balance_paise
     + COALESCE((SELECT SUM(s.total_paise - s.paid_paise) FROM sales s
@@ -29,6 +29,9 @@ def _dict(r):
         "name": r["name"],
         "phone": r["phone"],
         "address": r["address"],
+        "billing_address": r["billing_address"],
+        "gstin": r["gstin"],
+        "state_code": r["state_code"],
         "note": r["note"],
         "type": r["type"],
         "type_label": r["type"].capitalize(),
@@ -102,11 +105,20 @@ def _parse(data, self_id=None):
     ).fetchone()
     if dup:
         raise ApiError("A customer with this name and phone already exists.", 409, field="name")
+    gstin = gstin_field(data)
+    state_code = state_code_field(data)
+    if gstin and not state_code:
+        state_code = gstin[:2]
+    if gstin and state_code != gstin[:2]:
+        raise ApiError("Customer state code must match the first two digits of the GSTIN.", field="state_code")
     return {
         "name": name,
         "type": ctype,
         "phone": phone,
         "address": text(data, "address", "Address", max_len=200),
+        "billing_address": text(data, "billing_address", "Billing address", max_len=250),
+        "gstin": gstin,
+        "state_code": state_code,
         "note": text(data, "note", "Note", max_len=500),
         "opening": amount if kind == "udhaar" else -amount,
     }
@@ -118,9 +130,10 @@ def customer_create():
     db = get_db()
     with transaction(db):
         cid = db.execute(
-            "INSERT INTO customers (name, phone, address, type, opening_balance_paise, note)"
-            " VALUES (?,?,?,?,?,?)",
-            (f["name"], f["phone"], f["address"], f["type"], f["opening"], f["note"]),
+            "INSERT INTO customers (name, phone, address, type, opening_balance_paise, note, billing_address, gstin, state_code)"
+            " VALUES (?,?,?,?,?,?,?,?,?)",
+            (f["name"], f["phone"], f["address"], f["type"], f["opening"], f["note"],
+             f["billing_address"], f["gstin"], f["state_code"]),
         ).lastrowid
     return jsonify(customer_dict(cid)), 201
 
@@ -132,14 +145,19 @@ def customer_get(cid):
 
 @api_bp.put("/customers/<int:cid>")
 def customer_update(cid):
-    customer_row(cid)
-    f = _parse(body(), self_id=cid)
+    old = customer_row(cid)
+    data = body()
+    f = _parse(data, self_id=cid)
+    for key in ("billing_address", "gstin", "state_code"):
+        if key not in data:
+            f[key] = old[key]
     db = get_db()
     with transaction(db):
         db.execute(
-            "UPDATE customers SET name=?, phone=?, address=?, type=?, opening_balance_paise=?, note=?"
-            " WHERE id=?",
-            (f["name"], f["phone"], f["address"], f["type"], f["opening"], f["note"], cid),
+            "UPDATE customers SET name=?, phone=?, address=?, type=?, opening_balance_paise=?, note=?,"
+            " billing_address=?, gstin=?, state_code=? WHERE id=?",
+            (f["name"], f["phone"], f["address"], f["type"], f["opening"], f["note"],
+             f["billing_address"], f["gstin"], f["state_code"], cid),
         )
     return jsonify(customer_dict(cid))
 

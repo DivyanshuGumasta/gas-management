@@ -124,3 +124,4 @@
   .st-dmg-dispatch-row { grid-template-columns: 1fr 1fr; }
   .st-dmg-dispatch-name { grid-column: 1 / -1; }
 }
+.st-card-hsn { display: block; margin-top: 2px; color: var(--muted); font-size: 10px; font-weight: 500; }

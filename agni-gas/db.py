@@ -35,6 +35,44 @@ def init_db(path: str | None = None) -> None:
     try:
         with open(resource_path("schema.sql"), encoding="utf-8") as f:
             conn.executescript(f.read())
+        # v0.6: HSN/GST setup, customer invoice details and permanent invoice snapshots.
+        migrations = {
+            "cylinder_types": {
+                "hsn": "TEXT",
+                "gst_rate_bp": "INTEGER",
+            },
+            "catalog_items": {
+                "hsn": "TEXT",
+                "gst_rate_bp": "INTEGER",
+            },
+            "customers": {
+                "gstin": "TEXT",
+                "state_code": "TEXT",
+                "billing_address": "TEXT",
+            },
+            "sales": {
+                "cgst_paise": "INTEGER NOT NULL DEFAULT 0",
+                "sgst_paise": "INTEGER NOT NULL DEFAULT 0",
+                "igst_paise": "INTEGER NOT NULL DEFAULT 0",
+                "taxable_paise": "INTEGER NOT NULL DEFAULT 0",
+                "deposit_received_paise": "INTEGER NOT NULL DEFAULT 0",
+                "deposit_refunded_paise": "INTEGER NOT NULL DEFAULT 0",
+                "place_state_code": "TEXT",
+                "reverse_charge": "INTEGER NOT NULL DEFAULT 0",
+                "business_snapshot_json": "TEXT NOT NULL DEFAULT '{}'",
+                "customer_snapshot_json": "TEXT NOT NULL DEFAULT 'null'",
+            },
+            "cylinder_deposits": {
+                "sale_id": "INTEGER REFERENCES sales(id)",
+                "status": "TEXT NOT NULL DEFAULT 'active'",
+            },
+        }
+        for table, columns in migrations.items():
+            existing = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+            for column, definition in columns.items():
+                if column not in existing:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
         # v0.3.7: brand-new full cylinders are stored separately from refills.
         cols = [r[1] for r in conn.execute("PRAGMA table_info(purchase_items)")]
         if "new_full_qty" not in cols:

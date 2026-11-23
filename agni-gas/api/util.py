@@ -104,3 +104,68 @@ def quantity_from_milli(value):
     value = int(value or 0)
     whole, fraction = divmod(value, 1000)
     return str(whole) if not fraction else f"{whole}.{fraction:03d}".rstrip("0")
+
+# ---------- GST / HSN reference validation (v0.6) ----------
+STATES = {
+    "01": "Jammu & Kashmir", "02": "Himachal Pradesh", "03": "Punjab", "04": "Chandigarh",
+    "05": "Uttarakhand", "06": "Haryana", "07": "Delhi", "08": "Rajasthan", "09": "Uttar Pradesh",
+    "10": "Bihar", "11": "Sikkim", "12": "Arunachal Pradesh", "13": "Nagaland", "14": "Manipur",
+    "15": "Mizoram", "16": "Tripura", "17": "Meghalaya", "18": "Assam", "19": "West Bengal",
+    "20": "Jharkhand", "21": "Odisha", "22": "Chhattisgarh", "23": "Madhya Pradesh",
+    "24": "Gujarat", "26": "Dadra & Nagar Haveli and Daman & Diu", "27": "Maharashtra", "29": "Karnataka",
+    "30": "Goa", "31": "Lakshadweep", "32": "Kerala", "33": "Tamil Nadu", "34": "Puducherry",
+    "35": "Andaman & Nicobar Islands", "36": "Telangana", "37": "Andhra Pradesh", "38": "Ladakh",
+    "97": "Other Territory",
+}
+
+
+def hsn_field(data, key="hsn"):
+    """Return HSN/SAC as text; optional on product setup, required by invoice logic."""
+    value = data.get(key)
+    value = "" if value is None else str(value).strip().replace(" ", "")
+    if not value:
+        return None
+    if not re.fullmatch(r"[0-9]{2,10}", value):
+        raise ApiError("HSN/SAC must contain 2 to 10 digits.", field=key)
+    return value
+
+
+def gst_rate_bp_field(data, key="gst_rate"):
+    """Convert a percentage (e.g. 18 or 5.5) into integer basis points."""
+    from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+    raw = data.get(key)
+    if raw is None or str(raw).strip() == "":
+        return None
+    try:
+        value = Decimal(str(raw).strip())
+    except InvalidOperation:
+        raise ApiError("GST rate must be a valid percentage.", field=key)
+    if not value.is_finite() or value < 0 or value > 100:
+        raise ApiError("GST rate must be between 0 and 100 percent.", field=key)
+    return int((value * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+
+def state_code_field(data, key="state_code", required=False):
+    raw = data.get(key)
+    value = "" if raw is None else str(raw).strip()
+    if not value:
+        if required:
+            raise ApiError("Choose a state code.", field=key)
+        return None
+    if value not in STATES:
+        raise ApiError("Choose a valid two-digit Indian state code.", field=key)
+    return value
+
+
+def gstin_field(data, key="gstin", required=False):
+    value = (data.get(key) or "")
+    value = str(value).strip().upper()
+    if not value:
+        if required:
+            raise ApiError("GSTIN is required for invoice settings.", field=key)
+        return None
+    if not re.fullmatch(r"[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]", value):
+        raise ApiError("Enter a valid 15-character GSTIN.", field=key)
+    if value[:2] not in STATES:
+        raise ApiError("GSTIN contains an unknown state code.", field=key)
+    return value

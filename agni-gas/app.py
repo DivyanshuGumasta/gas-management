@@ -12,6 +12,7 @@ from paths import resource_path
 PAGES = {
     "/": ("dashboard.html", "home", "Home", ""),
     "/sales": ("sales.html", "sales", "Sales", ""),
+    "/business": ("business.html", "sales", "Invoice settings", "Agency details printed on customer invoices"),
     "/customers": ("customers.html", "customers", "Customers", "Customer list, ledger, receive payment and payment history"),
     "/suppliers-purchases": ("suppliers_purchases.html", "suppliers_purchases", "Suppliers & Purchases", ""),
     "/purchases/new": ("purchase_new.html", "suppliers_purchases", "New purchase", "Record supplier invoice and incoming stock"),

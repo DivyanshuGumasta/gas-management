@@ -105,7 +105,7 @@
 
   /* ---------- actions ---------- */
   function returnEmpties() {
-    Cust.openReturnEmpties({ customerId: c.id, customerName: c.name, held: cyl.held, onSaved: load });
+    window.location.href = "/sales?tab=new&customer=" + c.id;
   }
 
   document.querySelector(".detail-grid").addEventListener("click", (e) => {

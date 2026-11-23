@@ -9,6 +9,7 @@
 <div class="page-head">
   <h1 class="page-title">Sales</h1>
   <div class="head-actions" id="sl-head-actions">
+    <a class="btn btn-white" href="/business">Invoice settings</a>
     <div class="menu-wrap" data-scope="sales">
       <button class="btn btn-white" data-menu-toggle type="button"><i data-cicon="download"></i>Export<i data-cicon="chevronDown"></i></button>
       <div class="menu" hidden>
@@ -93,19 +94,29 @@
         <label class="field"><span id="sn-paid-label">Amount paid now</span><div class="pn-amount"><i>Rs</i><input class="input" id="sn-paid" inputmode="decimal" placeholder="0" disabled></div>
           <small class="hint" id="sn-pay-hint">Walk-in sales are cash only. Select a customer to give udhaar.</small></label>
         <div class="two">
-          <label class="field"><span>GST rate (%)</span><div class="pn-suffix-input"><input class="input" id="sn-gst" type="number" min="0" max="100" step="0.01" value="0"><i>%</i></div></label>
-          <label class="field"><span>GST amount</span><div class="pn-amount pn-readonly"><i>Rs</i><input class="input" id="sn-gst-amount" value="0.00" readonly></div></label>
+          <label class="field"><span>Place of supply state code</span><input class="input" id="sn-place-state" maxlength="2" inputmode="numeric" placeholder="State code"></label>
+          <label class="field"><span>Reverse charge</span><select class="select" id="sn-reverse-charge"><option value="no">No</option><option value="yes">Yes</option></select></label>
         </div>
+        <label class="field"><span>GST (calculated from each product's Stock &amp; Price settings)</span>
+          <div class="pn-amount pn-readonly"><i>Rs</i><input class="input" id="sn-gst-amount" value="0.00" readonly></div>
+          <small class="hint" id="sn-tax-split">CGST / SGST or IGST will appear here.</small>
+        </label>
+        <label class="field" id="sn-damaged-supplier-wrap" hidden><span>Supplier for damaged cylinder return</span>
+          <select class="select" id="sn-damaged-supplier"><option value="">Choose supplier</option></select>
+          <small class="hint">The supplier-side security deposit for these damaged cylinders is forfeited.</small>
+        </label>
+        <p class="hint" id="sn-tax-warning" hidden></p>
         <label class="field"><span>Note (optional)</span><textarea class="textarea" id="sn-note" maxlength="500"></textarea></label>
         <div class="pn-totals">
           <div><span>Subtotal</span><b id="sn-subtotal">Rs 0</b></div>
           <div class="sn-disc-row" id="sn-disc-row" hidden><span>Discount</span><b id="sn-disc-show">- Rs 0</b></div>
+          <div id="sn-deposit-in-row" hidden><span>Refundable security deposit received</span><b id="sn-deposit-in-show">+ Rs 0</b></div>
           <div><span>GST (<i id="sn-gst-label">0</i>%)</span><b id="sn-gst-show">Rs 0</b></div>
           <div class="sn-back-row" id="sn-back-row" hidden><span>Deposit given back</span><b id="sn-back-show">- Rs 0</b></div>
           <div class="pn-grand"><span id="sn-total-label">Total (incl. GST)</span><b id="sn-total">Rs 0</b></div>
           <div class="sn-due-row" id="sn-due-row" hidden><span>Udhaar on this bill</span><b id="sn-due">Rs 0</b></div>
         </div>
-        <button class="btn btn-orange btn-block pn-save" id="sn-save" type="submit" disabled><i data-cicon="check"></i>Save sale</button>
+        <button class="btn btn-orange btn-block pn-save" id="sn-save" type="submit"><i data-cicon="check"></i>Save sale</button>
       </div>
     </aside>
   </div>

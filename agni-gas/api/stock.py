@@ -14,8 +14,8 @@ from db import (get_db, transaction, link_new_cylinder_to_sole_supplier,
                 link_new_item_to_sole_supplier)
 from money import to_rupees
 from . import api_bp
-from .util import (ApiError, body, int_field, money_field, quantity_from_milli,
-                   quantity_milli_field, text)
+from .util import (ApiError, body, gst_rate_bp_field, hsn_field, int_field,
+                   money_field, quantity_from_milli, quantity_milli_field, text)
 
 LOW_CYLINDERS = 5     # a size is "LOW" when it has this many full cylinders or fewer
 LOW_ITEM_MILLI = 2000  # an item is "LOW" at 2 (of its unit) or fewer
@@ -81,7 +81,8 @@ def _item_movement(db, iid, delta_milli, kind, note=None):
 def _cylinder_dict(r, lot_value, lot_qty, suppliers):
     covered = lot_value + max(0, r["full_qty"] - lot_qty) * r["purchase_price_paise"]   # stock the lots do not cover
     return {
-        "id": r["id"], "name": r["name"], "kg": r["kg"],
+        "id": r["id"], "name": r["name"], "kg": r["kg"], "hsn": r["hsn"],
+        "gst_rate": None if r["gst_rate_bp"] is None else str(r["gst_rate_bp"] / 100),
         "full": r["full_qty"], "empty": r["empty_qty"], "damaged": r["damaged_qty"],
         "with_customers": r["with_customers_qty"],
         "sale_price": to_rupees(r["sale_price_paise"]), "wholesale_price": to_rupees(r["wholesale_price_paise"]),
@@ -97,6 +98,7 @@ def _item_dict(r, suppliers):
     value = (r["stock_qty_milli"] * r["purchase_price_paise"] + 500) // 1000
     return {
         "id": r["id"], "name": r["name"], "unit": r["unit"], "qty": quantity_from_milli(r["stock_qty_milli"]),
+        "hsn": r["hsn"], "gst_rate": None if r["gst_rate_bp"] is None else str(r["gst_rate_bp"] / 100),
         "sale_price": to_rupees(r["sale_price_paise"]), "wholesale_price": to_rupees(r["wholesale_price_paise"]),
         "purchase_price": to_rupees(r["purchase_price_paise"]),
         "low": r["stock_qty_milli"] <= LOW_ITEM_MILLI,
@@ -181,6 +183,8 @@ def stock_history():
             "FROM catalog_adjustments a JOIN catalog_items i ON i.id=a.item_id "
             "UNION ALL SELECT 'p' || c.id, c.id, c.moved_at, 'purchase', c.note, c.quantity_delta_milli, i.name, i.unit, p.number "
             "FROM catalog_stock_movements c JOIN catalog_items i ON i.id=c.item_id JOIN purchases p ON p.id=c.purchase_id "
+            "UNION ALL SELECT 's' || m.id, m.id, m.moved_at, m.kind, m.note, m.quantity_delta_milli, i.name, i.unit, s.number "
+            "FROM catalog_sale_movements m JOIN catalog_items i ON i.id=m.item_id JOIN sales s ON s.id=m.sale_id "
             "ORDER BY 3 DESC, 2 DESC LIMIT ?", (limit + 1,)
         ):
             label = MOVEMENT_LABEL.get(m["kind"], m["kind"].capitalize())
@@ -207,6 +211,8 @@ def cylinder_create():
     prices = {k: _blank0_money(data, k, lab) for k, lab in (
         ("sale_price", "Sale price"), ("wholesale_price", "Wholesale price"),
         ("purchase_price", "Purchase price"), ("security", "Security"))}
+    hsn = hsn_field(data)
+    gst_rate_bp = gst_rate_bp_field(data)
     full, empty = _blank0_int(data, "full", "Full cylinders"), _blank0_int(data, "empty", "Empty cylinders")
     db = get_db()
     with transaction(db):
@@ -220,8 +226,9 @@ def cylinder_create():
             order = db.execute("SELECT COALESCE(MAX(sort_order),-1)+1 FROM cylinder_types").fetchone()[0]
             tid = db.execute("INSERT INTO cylinder_types (name, kg, sort_order) VALUES (?,?,?)", (label, weight, order)).lastrowid
         db.execute("UPDATE cylinder_types SET sale_price_paise=?, wholesale_price_paise=?, purchase_price_paise=?, security_paise=?,"
-                   " full_qty=?, empty_qty=? WHERE id=?",
-                   (prices["sale_price"], prices["wholesale_price"], prices["purchase_price"], prices["security"], full, empty, tid))
+                   " full_qty=?, empty_qty=?, hsn=?, gst_rate_bp=? WHERE id=?",
+                   (prices["sale_price"], prices["wholesale_price"], prices["purchase_price"], prices["security"],
+                    full, empty, hsn, gst_rate_bp, tid))
         link_new_cylinder_to_sole_supplier(db, tid)
         if full or empty:
             _movement(db, tid, "opening", full=full, empty=empty, note="Starting stock")
@@ -235,11 +242,14 @@ def cylinder_rename(tid):
     data = body()
     weight, label = _weight(data)
     db = get_db()
-    _cylinder(db, tid)
+    current = _cylinder(db, tid)
+    hsn = hsn_field(data) if "hsn" in data else current["hsn"]
+    gst_rate_bp = gst_rate_bp_field(data) if "gst_rate" in data else current["gst_rate_bp"]
     with transaction(db):
         if db.execute("SELECT 1 FROM cylinder_types WHERE ABS(COALESCE(kg,0)-?) < 0.0005 AND id<>? AND active=1", (weight, tid)).fetchone():
             raise ApiError(f"{label} already exists.", 409, field="weight_kg")
-        db.execute("UPDATE cylinder_types SET name=?, kg=? WHERE id=?", (label, weight, tid))
+        db.execute("UPDATE cylinder_types SET name=?, kg=?, hsn=?, gst_rate_bp=? WHERE id=?",
+                   (label, weight, hsn, gst_rate_bp, tid))
     return _cylinder_response(db, tid)
 
 
@@ -325,6 +335,8 @@ def item_create():
     qty = 0 if data.get("qty") in (None, "") else quantity_milli_field(data.get("qty"), "Stock", field="qty", allow_zero=True)
     sale, wholesale, buy = (_blank0_money(data, k, lab) for k, lab in (
         ("sale_price", "Sale price"), ("wholesale_price", "Wholesale price"), ("purchase_price", "Purchase price")))
+    hsn = hsn_field(data)
+    gst_rate_bp = gst_rate_bp_field(data)
     db = get_db()
     with transaction(db):
         row = db.execute("SELECT id, active FROM catalog_items WHERE name=? COLLATE NOCASE", (name,)).fetchone()
@@ -335,8 +347,9 @@ def item_create():
             db.execute("UPDATE catalog_items SET active=1, name=?, unit=?, stock_qty_milli=0 WHERE id=?", (name, unit, iid))
         else:
             iid = db.execute("INSERT INTO catalog_items (name, unit) VALUES (?,?)", (name, unit)).lastrowid
-        db.execute("UPDATE catalog_items SET sale_price_paise=?, wholesale_price_paise=?, purchase_price_paise=?, stock_qty_milli=? WHERE id=?",
-                   (sale, wholesale, buy, qty, iid))
+        db.execute("UPDATE catalog_items SET sale_price_paise=?, wholesale_price_paise=?, purchase_price_paise=?,"
+                   " stock_qty_milli=?, hsn=?, gst_rate_bp=? WHERE id=?",
+                   (sale, wholesale, buy, qty, hsn, gst_rate_bp, iid))
         link_new_item_to_sole_supplier(db, iid)
         if qty:
             _item_movement(db, iid, qty, "opening", "Starting stock")
@@ -349,11 +362,14 @@ def item_edit(iid):
     name = text(data, "name", "Item name", required=True, max_len=100)
     unit = text(data, "unit", "Unit", max_len=20) or "pcs"
     db = get_db()
-    _item(db, iid)
+    current = _item(db, iid)
+    hsn = hsn_field(data) if "hsn" in data else current["hsn"]
+    gst_rate_bp = gst_rate_bp_field(data) if "gst_rate" in data else current["gst_rate_bp"]
     with transaction(db):
         if db.execute("SELECT 1 FROM catalog_items WHERE name=? COLLATE NOCASE AND id<>?", (name, iid)).fetchone():
             raise ApiError("Another item already uses this name.", 409, field="name")
-        db.execute("UPDATE catalog_items SET name=?, unit=? WHERE id=?", (name, unit, iid))
+        db.execute("UPDATE catalog_items SET name=?, unit=?, hsn=?, gst_rate_bp=? WHERE id=?",
+                   (name, unit, hsn, gst_rate_bp, iid))
     return _item_response(db, iid)
 
 

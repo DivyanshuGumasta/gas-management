@@ -58,7 +58,9 @@
   function cylinderCard(c) {
     return '<article class="st-card" id="cyl-' + c.id + '">' +
       '<div class="st-card-head"><span class="st-card-icon"><i data-icon="cylinder"></i></span>' +
-      '<span class="st-card-name">' + esc(c.name) + "</span>" + (c.low ? '<span class="st-low">LOW</span>' : "") + "</div>" +
+      '<span class="st-card-name">' + esc(c.name) + '</span>' +
+      (c.hsn ? '<small class="st-card-hsn">HSN ' + esc(c.hsn) + (c.gst_rate == null ? '' : ' · GST ' + esc(c.gst_rate) + '%') + '</small>' : (c.gst_rate == null ? '' : '<small class="st-card-hsn">GST ' + esc(c.gst_rate) + '%</small>')) +
+      (c.low ? '<span class="st-low">LOW</span>' : '') + "</div>" +
       '<div class="st-boxes">' +
         '<div class="st-box sale"><small>Sale price</small><b>' + money(c.sale_price) + "</b></div>" +
         '<div class="st-box"><small>Wholesale</small><b>' + money(c.wholesale_price) + "</b></div>" +
@@ -75,7 +77,8 @@
   function itemCard(it) {
     return '<article class="st-card" id="item-' + it.id + '">' +
       '<div class="st-card-head"><span class="st-card-icon item"><i data-icon="cart"></i></span>' +
-      '<span><span class="st-card-name">' + esc(it.name) + '</span><br><span class="st-card-unit">Sold per ' + esc(it.unit) + "</span></span>" +
+      '<span><span class="st-card-name">' + esc(it.name) + '</span><br><span class="st-card-unit">Sold per ' + esc(it.unit) + "</span>" +
+      (it.hsn ? '<small class="st-card-hsn">HSN ' + esc(it.hsn) + (it.gst_rate == null ? '' : ' · GST ' + esc(it.gst_rate) + '%') + '</small>' : (it.gst_rate == null ? '' : '<small class="st-card-hsn">GST ' + esc(it.gst_rate) + '%</small>')) + '</span>' +
       (it.low ? '<span class="st-low">LOW</span>' : "") + "</div>" +
       '<div class="st-boxes">' +
         '<div class="st-box sale"><small>Sale price</small><b>' + money(it.sale_price) + "</b></div>" +
@@ -191,6 +194,8 @@
       fields: [
         { name: "weight_kg", label: "Cylinder weight (kg)", kind: "qty", required: true, suffix: "kg", hint: "Decimal weights such as 5.4 are fine." },
         ...priceFields(null),
+        { name: "hsn", label: "HSN / SAC code", kind: "text", placeholder: "Enter the code confirmed by your CA" },
+        { name: "gst_rate", label: "GST rate (%)", kind: "text", placeholder: "e.g. 18" },
         { name: "purchase_price", label: "Purchase price", kind: "money", pair: true },
         { name: "security", label: "Security (deposit)", kind: "money" },
         { name: "full", label: "Full cylinders you have now", kind: "int", value: "0", pair: true },
@@ -205,6 +210,8 @@
       intro: "Anything you sell besides gas: gas pipes, regulators, stoves and so on.",
       fields: [
         { name: "name", label: "Item name", kind: "text", required: true, placeholder: "e.g. Gas pipe" },
+        { name: "hsn", label: "HSN / SAC code", kind: "text", placeholder: "Enter the confirmed code" },
+        { name: "gst_rate", label: "GST rate (%)", kind: "text", placeholder: "e.g. 18" },
         { name: "unit", label: "Sold per", kind: "unit", pair: true },
         { name: "qty", label: "In stock now", kind: "qty", value: "0" },
         { name: "sale_price", label: "Sale price", kind: "money", pair: true },
@@ -271,7 +278,11 @@
       const c = state.cylinders.find((x) => x.id === id);
       formModal({
         title: "Edit cylinder", success: "Cylinder updated",
-        fields: [{ name: "weight_kg", label: "Cylinder weight (kg)", kind: "qty", value: c.kg, required: true, suffix: "kg" }],
+        fields: [
+          { name: "weight_kg", label: "Cylinder weight (kg)", kind: "qty", value: c.kg, required: true, suffix: "kg" },
+          { name: "hsn", label: "HSN / SAC code", kind: "text", value: c.hsn || "" },
+          { name: "gst_rate", label: "GST rate (%)", kind: "text", value: c.gst_rate == null ? "" : c.gst_rate },
+        ],
         run: (v) => Api.put("/api/cylinders/" + id, v),
       });
     } else {
@@ -281,6 +292,8 @@
         fields: [
           { name: "name", label: "Item name", kind: "text", value: it.name, required: true },
           { name: "unit", label: "Sold per", kind: "unit", value: it.unit },
+          { name: "hsn", label: "HSN / SAC code", kind: "text", value: it.hsn || "" },
+          { name: "gst_rate", label: "GST rate (%)", kind: "text", value: it.gst_rate == null ? "" : it.gst_rate },
         ],
         run: (v) => Api.put("/api/items/" + id, v),
       });

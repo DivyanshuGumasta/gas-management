@@ -68,7 +68,7 @@ def _held(db, tid, sid):
     """Deposit (paise) still held with one supplier for one cylinder size. Never below zero."""
     row = db.execute(
         "SELECT COALESCE(SUM(CASE kind WHEN 'paid' THEN amount_paise ELSE -amount_paise END),0) FROM cylinder_deposits "
-        "WHERE cylinder_type_id=? AND supplier_id=?", (tid, sid)).fetchone()
+        "WHERE cylinder_type_id=? AND supplier_id=? AND status='active'", (tid, sid)).fetchone()
     return max(0, row[0])
 
 
@@ -120,12 +120,12 @@ def stock_extra():
     for c in cylinders.values():
         c["unassigned_full"] = max(0, c["unassigned_full"])
         c["unassigned_empty"] = max(0, c["unassigned_empty"])
-    totals = {k: v for k, v in db.execute("SELECT kind, COALESCE(SUM(amount_paise),0) FROM cylinder_deposits GROUP BY kind")}
+    totals = {k: v for k, v in db.execute("SELECT kind, COALESCE(SUM(amount_paise),0) FROM cylinder_deposits WHERE status='active' GROUP BY kind")}
     by_mode = {k: v for k, v in db.execute(
-        "SELECT received_in, COALESCE(SUM(amount_paise),0) FROM cylinder_deposits WHERE kind='refunded' GROUP BY 1")}
+        "SELECT received_in, COALESCE(SUM(amount_paise),0) FROM cylinder_deposits WHERE kind='refunded' AND status='active' GROUP BY 1")}
     damaged = [{"cylinder_type_id": r["id"], "name": r["name"], "qty": r["damaged_qty"], "deposit_lost": to_rupees(r["lost"])} for r in db.execute(
         "SELECT c.id, c.name, c.damaged_qty, COALESCE((SELECT SUM(amount_paise) FROM cylinder_deposits d "
-        "WHERE d.cylinder_type_id=c.id AND d.kind='cancelled'),0) AS lost FROM cylinder_types c "
+        "WHERE d.cylinder_type_id=c.id AND d.kind='cancelled' AND d.status='active'),0) AS lost FROM cylinder_types c "
         "WHERE c.active=1 AND c.damaged_qty>0 ORDER BY c.sort_order, c.id")]
     # Each cancelled deposit row created by damaged_add() is one damage batch.
     # A batch remains selectable until all its damaged cylinders have been dispatched.
@@ -142,7 +142,7 @@ def stock_extra():
         "FROM cylinder_deposits d "
         "JOIN cylinder_types c ON c.id=d.cylinder_type_id "
         "LEFT JOIN suppliers s ON s.id=d.supplier_id "
-        "WHERE d.kind='cancelled' AND c.active=1 "
+        "WHERE d.kind='cancelled' AND d.status='active' AND c.active=1 "
         "ORDER BY d.created_at, d.id"
     ).fetchall()
     for r in damage_batches:
@@ -304,7 +304,7 @@ def damaged_send_back():
                 "SELECT d.id, d.cylinder_type_id, d.qty, d.amount_paise, "
                 "COALESCE((SELECT SUM(di.qty) FROM damaged_cylinder_dispatch_items di "
                 "          WHERE di.damage_event_id=d.id),0) AS dispatched_qty "
-                "FROM cylinder_deposits d WHERE d.id=? AND d.kind='cancelled'",
+                "FROM cylinder_deposits d WHERE d.id=? AND d.kind='cancelled' AND d.status='active'",
                 (event_id,),
             ).fetchone()
             if not event:

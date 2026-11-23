@@ -111,6 +111,9 @@ window.Cust = (function () {
       '<button type="button" class="seg-btn" data-val="retail">Retail</button>' +
       '<button type="button" class="seg-btn" data-val="wholesale">Wholesale</button></div></div></div>' +
       '<label class="field"><span>Address (optional)</span><input class="input" name="address" maxlength="200" autocomplete="off"></label>' +
+      '<label class="field"><span>Billing address (optional)</span><input class="input" name="billing_address" maxlength="250" autocomplete="off"></label>' +
+      '<div class="two"><label class="field"><span>GSTIN (optional)</span><input class="input" name="gstin" maxlength="15" autocapitalize="characters" autocomplete="off"></label>' +
+      '<label class="field"><span>GST state code (optional)</span><input class="input" name="state_code" maxlength="2" inputmode="numeric" placeholder="e.g. 22"></label></div>' +
       '<div class="field"><span>Previous balance (optional)</span><div class="balance-row">' +
       '<div class="seg" data-seg="otype"><button type="button" class="seg-btn" data-val="udhaar">Udhaar</button>' +
       '<button type="button" class="seg-btn" data-val="advance">Advance</button></div>' +
@@ -128,6 +131,9 @@ window.Cust = (function () {
       q("name").value = customer.name || "";
       q("phone").value = customer.phone || "";
       q("address").value = customer.address || "";
+      q("billing_address").value = customer.billing_address || "";
+      q("gstin").value = customer.gstin || "";
+      q("state_code").value = customer.state_code || "";
       q("note").value = customer.note || "";
       q("opening_amount").value = opening ? String(Math.abs(opening)) : "";
     }
@@ -159,6 +165,8 @@ window.Cust = (function () {
       saveBtn.disabled = true;
       const payload = {
         name, type: f.type, phone: q("phone").value.trim(), address: q("address").value.trim(),
+        billing_address: q("billing_address").value.trim(), gstin: q("gstin").value.trim().toUpperCase(),
+        state_code: q("state_code").value.trim(),
         opening_type: f.otype, opening_amount: q("opening_amount").value.trim(), note: q("note").value.trim(),
       };
       try {

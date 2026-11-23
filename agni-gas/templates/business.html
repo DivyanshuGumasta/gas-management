@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/customers.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/sales.css') }}">
+<div class="page-head">
+  <div><h1 class="page-title">Invoice settings</h1><p class="st-sub">Business details printed on customer tax invoices</p></div>
+  <a class="btn btn-white" href="/sales">Back to Sales</a>
+</div>
+<div class="card biz-card">
+  <div id="biz-error" class="banner banner-error" hidden><span></span></div>
+  <form id="biz-form" novalidate>
+    <div class="biz-grid">
+      <label class="field"><span>Agency / legal business name *</span><input class="input" name="name" maxlength="120" required></label>
+      <label class="field"><span>GSTIN *</span><input class="input" name="gstin" maxlength="15" autocapitalize="characters" required></label>
+      <label class="field biz-wide"><span>Registered business address *</span><textarea class="textarea" name="address" maxlength="300" required></textarea></label>
+      <label class="field"><span>State code *</span><input class="input" name="state_code" maxlength="2" inputmode="numeric" placeholder="e.g. 22" required><small class="hint">Must match the first two digits of the agency GSTIN.</small></label>
+      <label class="field"><span>Invoice number prefix</span><input class="input" name="invoice_prefix" maxlength="8" value="S"></label>
+      <label class="field"><span>Phone</span><input class="input" name="phone" maxlength="30"></label>
+      <label class="field"><span>Email</span><input class="input" name="email" maxlength="120" type="email"></label>
+      <label class="field"><span>Bank name</span><input class="input" name="bank_name" maxlength="100"></label>
+      <label class="field"><span>Bank account</span><input class="input" name="bank_account" maxlength="40"></label>
+      <label class="field"><span>Bank IFSC</span><input class="input" name="bank_ifsc" maxlength="20"></label>
+      <label class="field biz-wide"><span>Terms / payment notes</span><textarea class="textarea" name="terms" maxlength="500"></textarea></label>
+    </div>
+    <p class="hint">These details are copied into each invoice when it is created. Editing them later does not change previous invoices.</p>
+    <div class="form-actions"><button class="btn btn-dark" type="submit">Save invoice settings</button></div>
+  </form>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/customers_common.js') }}"></script><script src="{{ url_for('static', filename='js/business.js') }}"></script>{% endblock %}
