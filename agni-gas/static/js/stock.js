@@ -325,9 +325,13 @@
   $("st-chips").addEventListener("click", (e) => {
     const b = e.target.closest(".chip"); if (!b) return;
     state.histSize = b.dataset.size; state.histLimit = PAGE;
+    const exportWrap = document.querySelector('[data-scope="stock-history"]');
+    if (exportWrap) exportWrap.dataset.cylinderTypeId = state.histSize || "";
     document.querySelectorAll("#st-chips .chip").forEach((c) => c.classList.toggle("on", c === b));
     loadHistory();
   });
   window.StockUI = { load, toast, state };   // used by stock_extra.js
+  const historyExport = document.querySelector('[data-scope="stock-history"]');
+  if (historyExport) historyExport.dataset.cylinderTypeId = state.histSize || "";
   load();
 })();

@@ -5,6 +5,7 @@ pyinstaller --noconfirm --windowed --name AgniGas ^
   --add-data "templates;templates" ^
   --add-data "static;static" ^
   --add-data "schema.sql;." ^
+  --hidden-import xlsxwriter ^
   desktop.py
 echo.
 echo Done. Copy the dist\AgniGas folder to the client's laptop.

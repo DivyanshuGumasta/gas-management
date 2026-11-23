@@ -417,7 +417,9 @@
         '<label class="pn-rate pn-deposit"><span><i>Rs</i><input type="number" min="0" step="0.01" value="' + esc(item.security_rate) + '" data-deposit></span></label></div>' +
       '<div class="pn-qty-line"><div><b>Refill</b><small>Empty back, full in</small></div>' + stepper('refill', 0, item.empty_stock) + '</div>' +
       '<div class="pn-qty-line"><div><b>New full cylinder</b><small>Brand-new and filled (rate + deposit)</small></div>' + stepper('new-full', 0) + '</div>' +
-      '<div class="pn-qty-line"><div><b>New empty cylinder</b><small>Brand-new and empty (deposit only)</small></div>' + stepper('new-empty', 0) + '</div>' +
+      '<div class="pn-qty-line"><div><b>New empty cylinder</b><small>Brand-new empty shell</small></div>' + stepper('new-empty', 0) + '</div>' +
+      '<div class="pn-qty-line"><div><b>Shell acquisition cost</b><small>Actual non-refundable cost per empty cylinder; separate from the refundable deposit</small></div>' +
+        '<label class="pn-rate"><span><i>Rs</i><input type="number" min="0" step="0.01" value="' + esc(item.new_empty_rate || '0.00') + '" data-new-empty-cost></span></label></div>' +
       '<div class="pn-qty-line"><div><b>Return cylinder</b><small>Empty back only</small></div>' + stepper('return', 0, item.empty_stock) + '</div>' +
       (Number(item.empty_stock) <= 0 ? '<p class="pn-note-empty">No empty cylinders in stock, so Refill and Return are not available.</p>' : '') +
       '<div class="pn-item-footer"><span>Amount</span><b data-line-total>Rs 0</b></div></article>';
@@ -535,6 +537,7 @@
 
   function calculate() {
     let subtotalCents = 0;
+    let missingEmptyShellCost = false;
     $("pn-items").querySelectorAll("[data-item]").forEach((card) => {
       const item = state.cylinders.find((row) => row.id === Number(card.dataset.item));
       if (!item) return;
@@ -542,11 +545,16 @@
       const refill = value(card.querySelector("[data-refill]"));
       const newFull = value(card.querySelector("[data-new-full]"));
       const newEmpty = value(card.querySelector("[data-new-empty]"));
+      const newEmptyCostCents = cents(card.querySelector("[data-new-empty-cost]").value);
       const ret = value(card.querySelector("[data-return]"));
       const depositInput = card.querySelector("[data-deposit]");
       const depositCents = cents(depositInput.value);
-      // Every full cylinder costs the rate. A brand-new cylinder (full or empty) also costs the deposit.
-      const lineCents = (refill + newFull) * rateCents + (newFull + newEmpty) * depositCents;
+      // Shell acquisition cost is capitalized separately from the refundable supplier deposit.
+      const lineCents = (refill + newFull) * rateCents + (newFull + newEmpty) * depositCents
+        + newEmpty * newEmptyCostCents;
+      const shellCostInput = card.querySelector("[data-new-empty-cost]");
+      shellCostInput.classList.toggle("invalid", newEmpty > 0 && newEmptyCostCents <= 0);
+      if (newEmpty > 0 && newEmptyCostCents <= 0) missingEmptyShellCost = true;
       subtotalCents += lineCents;
       card.querySelector("[data-line-total]").textContent = moneyFromCents(lineCents);
       // Refill and Return both send empties back, so together they cannot exceed the empties in stock.
@@ -593,7 +601,7 @@
     $("pn-total").textContent = moneyFromCents(totalCents);
     if (status === "partial" && cents(paidInput.value) > totalCents) paidInput.value = (totalCents / 100).toFixed(2);
     const hasLines = subtotalCents > 0;
-    $("pn-save").disabled = !state.supplier || !hasLines;
+    $("pn-save").disabled = !state.supplier || !hasLines || missingEmptyShellCost;
   }
 
   function collectCylinderItems() {
@@ -604,15 +612,20 @@
       const refill = Math.floor(value(card.querySelector("[data-refill]")));
       const newFull = Math.floor(value(card.querySelector("[data-new-full]")));
       const newEmpty = Math.floor(value(card.querySelector("[data-new-empty]")));
+      const newEmptyCost = card.querySelector("[data-new-empty-cost]").value.trim() || "0";
       const ret = Math.floor(value(card.querySelector("[data-return]")));
       if (!refill && !newFull && !newEmpty && !ret) return;
       if (refill + ret > item.empty_stock) {
         throw new Error(item.name + ": Refill + Return is " + (refill + ret) + ", but only " + item.empty_stock + " empty cylinders are in stock.");
       }
+      if (newEmpty > 0 && !(Number(newEmptyCost) > 0)) {
+        throw new Error("Enter the actual acquisition cost per new empty " + item.name + " cylinder. This is separate from its refundable supplier deposit.");
+      }
       // Same API as before: a refill is one full in + one empty out, behind the scenes.
       result.push({ cylinder_type_id: item.id, full_in: refill + newFull, new_full: newFull, empty_out: refill + ret, new_empty: newEmpty,
         rate: card.querySelector("[data-rate]").value.trim() || "0",
-        deposit: card.querySelector("[data-deposit]").value.trim() || "0" });
+        deposit: card.querySelector("[data-deposit]").value.trim() || "0",
+        new_empty_cost: newEmptyCost });
     });
     return result;
   }
@@ -689,6 +702,7 @@
     const date = $("pn-date").value || today();
     const payload = {
       supplier_id: state.supplier.id,
+      supplier_invoice_number: $("pn-supplier-invoice-number").value.trim(),
       date,
       items,
       catalog_items: catalogItems,

@@ -40,6 +40,9 @@
   function setTab(tab) {
     activeTab = tab;
     document.querySelectorAll(".sp-detail-tabs [data-tab]").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
+    const menu = document.querySelector(".page-head [data-scope]");
+    if (menu) menu.dataset.scope = tab === "purchases" ? "supplier-purchases:" + sid :
+      tab === "items" ? "supplier-items:" + sid : "supplier-statement:" + sid;
     if (tab === "ledger") loadLedger();
     if (tab === "purchases") loadPurchases();
     if (tab === "items") loadItems();
@@ -130,7 +133,10 @@
   }));
   $("sd-new-purchase").addEventListener("click", () => { location.href = "/purchases/new?supplier=" + sid; });
   $("sd-pay").addEventListener("click", () => SupplierUI.openPaymentForm({ supplier, onSaved: async () => { await loadSupplier(); setTab(activeTab); } }));
-  $("sd-statement").addEventListener("click", () => window.print());
+  $("sd-statement").addEventListener("click", () => {
+    if (window.CustExport) window.CustExport.exportData("pdf", "supplier-statement:" + sid);
+    else window.print();
+  });
 
   $("sd-retry").addEventListener("click", async () => { await loadSupplier(); setTab(activeTab); });
   document.querySelectorAll(".sp-detail-tabs [data-tab]").forEach((button) => button.addEventListener("click", () => setTab(button.dataset.tab)));

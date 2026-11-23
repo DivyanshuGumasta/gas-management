@@ -9,7 +9,7 @@
   <div class="page-head">
     <div class="title-block"><a class="back-btn" href="/suppliers-purchases?tab=suppliers" aria-label="Back to suppliers">←</a><div><h1 id="sd-name"></h1><small id="sd-gstin"></small></div></div>
     <div class="head-actions">
-      <div class="menu-wrap" data-scope="statement:{{ supplier_id|int }}">
+      <div class="menu-wrap" data-scope="supplier-statement:{{ supplier_id|int }}">
         <button class="btn btn-white" data-menu-toggle type="button"><i data-cicon="download"></i>Export<i data-cicon="chevronDown"></i></button>
         <div class="menu" hidden><button type="button" data-export="pdf">Download PDF</button><button type="button" data-export="excel">Download Excel</button></div>
       </div>

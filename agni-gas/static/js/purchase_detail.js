@@ -51,10 +51,12 @@
       $("pd-number").textContent = purchase.number;
       $("pd-supplier").textContent = purchase.supplier;
       $("pd-gstin").textContent = "GSTIN: " + (purchase.gstin || "—");
+      $("pd-supplier-invoice-number").value = purchase.supplier_invoice_number || "";
       $("pd-date").textContent = purchase.date;
 
       const cylinders = (purchase.items || []).map((item) =>
-        '<tr><td><b>' + esc(item.name) + '</b><small class="sub">Cylinder · rate ' + money(item.rate) + ' · deposit ' + money(item.security_rate) + '</small></td>' +
+        '<tr><td><b>' + esc(item.name) + '</b><small class="sub">Cylinder · rate ' + money(item.rate) + ' · refundable deposit ' + money(item.security_rate) +
+          (Number(item.new_empty) > 0 ? ' · empty-shell acquisition cost ' + money(item.new_empty_cost) + ' / cylinder' : '') + '</small></td>' +
         '<td class="num">' + (item.full_in - (item.new_full || 0)) + '</td><td class="num">' + (item.new_full || 0) + '</td><td class="num">' + item.new_empty +
         '</td><td class="num">' + (item.empty_out - (item.full_in - (item.new_full || 0))) + '</td><td class="num">' + money(item.amount) + '</td></tr>'
       );
@@ -82,6 +84,24 @@
   }
 
   $("pd-retry").addEventListener("click", load);
+  $("pd-save-invoice-number").addEventListener("click", async () => {
+    const button = $("pd-save-invoice-number");
+    const status = $("pd-invoice-number-status");
+    button.disabled = true;
+    status.textContent = "Saving…";
+    try {
+      const saved = await Api.put("/api/purchases/" + pid + "/supplier-invoice-number", {
+        supplier_invoice_number: $("pd-supplier-invoice-number").value.trim(),
+      });
+      purchase.supplier_invoice_number = saved.supplier_invoice_number || "";
+      $("pd-supplier-invoice-number").value = purchase.supplier_invoice_number;
+      status.textContent = purchase.supplier_invoice_number ? "Saved. This reference will appear in CA exports." : "Supplier invoice number cleared.";
+    } catch (err) {
+      status.textContent = err.message || "Could not save supplier invoice number.";
+    } finally {
+      button.disabled = false;
+    }
+  });
   $("pd-attachment-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const file = $("pd-invoice-file").files[0];

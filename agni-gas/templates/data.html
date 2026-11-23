@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/support_data.css') }}">
+
+<div class="sd-page-head">
+  <h1 class="page-title">{{ title }}</h1>
+  <p>View your business records and manage local database backups.</p>
+</div>
+
+<div id="data-error" class="banner banner-error" hidden>
+  <span>Could not load database information.</span>
+  <button class="btn btn-ghost btn-sm" id="data-retry" type="button">Retry</button>
+</div>
+<div id="data-action-status" class="sd-action-status" role="status" aria-live="polite" hidden></div>
+
+<section class="card sd-data-overview" aria-labelledby="data-overview-title">
+  <div class="sd-overview-heading">
+    <span class="sd-icon sd-icon-green"><i data-icon="cloud"></i></span>
+    <div>
+      <h2 id="data-overview-title">Business data</h2>
+      <p>Stored locally in this Agni Gas workspace.</p>
+    </div>
+  </div>
+
+  <div class="sd-count-grid" aria-live="polite" aria-busy="true" id="data-counts">
+    <div class="sd-count"><strong id="count-customers">—</strong><span>Customers</span></div>
+    <div class="sd-count"><strong id="count-sales">—</strong><span>Sales</span></div>
+    <div class="sd-count"><strong id="count-payments">—</strong><span>Payments</span></div>
+    <div class="sd-count"><strong id="count-purchases">—</strong><span>Purchases</span></div>
+    <div class="sd-count"><strong id="count-suppliers">—</strong><span>Suppliers</span></div>
+    <div class="sd-count"><strong id="count-cylinder-types">—</strong><span>Cylinder types</span></div>
+  </div>
+  <p id="data-updated" class="sd-updated" aria-live="polite">Loading record counts…</p>
+</section>
+
+<section class="card sd-backup-settings" aria-labelledby="backup-settings-title">
+  <div class="sd-overview-heading">
+    <span class="sd-icon sd-icon-purple"><i data-icon="chart"></i></span>
+    <div>
+      <h2 id="backup-settings-title">Automatic backup settings</h2>
+      <p>Choose how often Agni creates a backup, how many to keep and where to save them.</p>
+    </div>
+  </div>
+  <form id="data-settings-form" novalidate>
+    <div class="sd-settings-grid">
+      <label class="field">
+        <span>Automatic backup frequency</span>
+        <div class="sd-inline-field">
+          <span>Every</span>
+          <input class="input" id="backup-frequency-value" name="frequency_value" type="number" min="1" max="8760" step="1" required>
+          <select class="select" id="backup-frequency-unit" name="frequency_unit">
+            <option value="hours">Hours</option>
+            <option value="days">Days</option>
+            <option value="weeks">Weeks</option>
+          </select>
+        </div>
+        <small class="hint">Agni checks the schedule at startup and every 60 seconds while the app is open.</small>
+      </label>
+      <label class="field">
+        <span>Maximum automatic backups</span>
+        <div class="sd-inline-field">
+          <input class="input" id="backup-retention" name="retention_count" type="number" min="1" max="100" step="1" required>
+          <span class="sd-suffix">backups</span>
+        </div>
+        <small class="hint">When the limit is reached, the oldest automatic backup is deleted first. Manual and safety backups are kept separately.</small>
+      </label>
+      <label class="field sd-location-field">
+        <span>Backup storage location</span>
+        <input class="input" id="backup-directory" name="directory" type="text" maxlength="1000" placeholder="Enter an absolute folder path" required autocomplete="off" spellcheck="false">
+        <small class="hint">Use a folder on this computer or an attached drive. The folder will be created if it does not exist.</small>
+      </label>
+    </div>
+    <div class="sd-settings-footer">
+      <p id="backup-settings-note" class="sd-form-note">Settings have not been loaded yet.</p>
+      <button class="btn btn-dark" id="backup-settings-save" type="submit">Save settings</button>
+    </div>
+  </form>
+</section>
+
+<h2 class="sd-section-title">Backup and restore</h2>
+<div class="sd-action-grid">
+  <section class="card sd-action-card">
+    <div class="sd-action-heading">
+      <span class="sd-icon sd-icon-green"><i data-icon="download"></i></span>
+      <div>
+        <h2>Manual backup</h2>
+        <p>Create an extra backup immediately in the selected storage folder. Manual backups are not removed by automatic retention.</p>
+      </div>
+    </div>
+    <button class="sd-action-button sd-action-primary" id="data-manual-backup" type="button">
+      <i data-icon="download"></i>Backup
+    </button>
+  </section>
+
+  <section class="card sd-action-card">
+    <div class="sd-action-heading">
+      <span class="sd-icon sd-icon-purple"><i data-icon="download"></i></span>
+      <div>
+        <h2>Restore backup</h2>
+        <p>Choose an Agni database backup. Restore merges a later complete snapshot into the current database; it does not replace the database file.</p>
+      </div>
+    </div>
+    <div class="sd-restore-controls">
+      <label class="sd-file-picker" for="data-restore-file"><i data-icon="download"></i><span id="data-restore-filename">Choose a backup file (.db)</span></label>
+      <input id="data-restore-file" type="file" accept=".db,.sqlite,.sqlite3,application/vnd.sqlite3,application/x-sqlite3" hidden>
+      <button class="sd-action-button sd-action-secondary" id="data-restore-button" type="button" disabled>
+        <i data-icon="download"></i>Restore
+      </button>
+    </div>
+    <p class="sd-restore-note">A safety backup is created before changes. Existing records are preserved. If the two databases have conflicting, independent changes, restore is rejected rather than risking stock or ledger inconsistencies.</p>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/data.js') }}"></script>
+{% endblock %}

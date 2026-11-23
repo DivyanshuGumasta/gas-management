@@ -104,6 +104,8 @@
     $("tab-history").classList.toggle("on", tab === "history");
     $("view-list").hidden = tab !== "list";
     $("view-history").hidden = tab !== "history";
+    const exportMenu = document.querySelector('.page-head [data-scope]');
+    if (exportMenu) exportMenu.dataset.scope = tab === "history" ? "payments" : "customers";
     try { history.replaceState(null, "", tab === "history" ? "#history" : location.pathname); } catch (_) { /* ignore */ }
     refresh();
   }

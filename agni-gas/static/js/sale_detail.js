@@ -70,7 +70,11 @@
     if (Number(sale.retained_deposits)) rows.push(sumRow('Customer deposits retained', sale.retained_deposits));
     const total = Number(sale.total);
     rows.push(sumRow(total < 0 ? 'Amount to be paid back' : 'Invoice total payable', Math.abs(total), 'rc-total'));
-    rows.push(sumRow(sale.paid_label || (total < 0 ? 'Paid back' : 'Amount received'), Math.abs(Number(sale.paid)), ''));
+    rows.push(sumRow(sale.paid_label || (total < 0 ? 'Paid back' : 'Amount received at invoice'), Math.abs(Number(sale.paid)), ''));
+    if (Number(sale.customer_credits_applied) > 0 && !cancelled) {
+      rows.push(sumRow('Customer receipts / advances applied', sale.customer_credits_applied, ''));
+      rows.push(sumRow('Total paid / credits applied', sale.effective_paid, ''));
+    }
     if (Number(sale.due) > 0 && !cancelled) rows.push(sumRow('Balance due', sale.due, 'rc-due'));
     $('rc-sums').innerHTML = rows.join('');
     const depositLines = sale.lines.filter((line) => ['deposit', 'deposit_refund', 'deposit_forfeit', 'deposit_retained', 'empty_in'].includes(line.kind));
@@ -102,8 +106,11 @@
   function whatsappText() {
     const lines = sale.lines.filter((x) => x.kind !== 'empty_in' && x.kind !== 'deposit_forfeit')
       .map((x) => '• ' + x.qty + ' x ' + label(x) + ' = ' + rupees(x.amount));
+    const paid = Number(sale.effective_paid == null ? sale.paid : sale.effective_paid);
+    const credits = Number(sale.customer_credits_applied || 0);
     return ['*' + (sale.business && sale.business.name || 'Agency') + '*', 'Invoice ' + sale.number + ' · ' + Cust.date(sale.date), '']
-      .concat(lines, ['', 'Total: ' + rupees(Math.abs(Number(sale.total))), 'Paid: ' + rupees(Math.abs(Number(sale.paid)))],
+      .concat(lines, ['', 'Total: ' + rupees(Math.abs(Number(sale.total))), 'Paid / credits applied: ' + rupees(Math.abs(paid))],
+        credits > 0 ? ['Customer receipts / advances applied: ' + rupees(credits)] : [],
         Number(sale.due) > 0 ? ['Balance due: ' + rupees(sale.due)] : [], ['']).join('\n');
   }
   $('rc-wa').addEventListener('click', () => {
@@ -115,6 +122,8 @@
   $('rc-retry').addEventListener('click', load);
   $('rc-cancel').addEventListener('click', () => {
     const body = UI.openModal('Cancel invoice ' + (sale && sale.number || ''));
+    // Keep this amount tied to the immutable amount recorded on the invoice.
+    // Customer-level receipts remain visible in the account ledger as credits.
     const paid = sale ? Number(sale.paid || 0) : 0;
     const refund = Math.abs(paid);
     const collect = paid < 0;

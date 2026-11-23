@@ -27,9 +27,7 @@
     $("cd-cyl-count").textContent = c.cylinders > 0 ? c.cylinders : "";
     $("cd-meta").innerHTML = [c.phone, c.address, c.note].filter(Boolean).map((t) => "<span>" + esc(t) + "</span>").join("");
     $("cd-newsale").href = "/sales/new?customer=" + c.id;
-    $("cd-export").dataset.scope = "customer:" + c.id;
-    $("cd-statement").dataset.scope = "statement:" + c.id;
-    $("cd-statement").closest("aside").dataset.scope = "statement:" + c.id;
+    updateExportScope();
   }
 
   /* ---------- tabs ---------- */
@@ -79,8 +77,16 @@
       '<button class="btn btn-dark" id="price-save" type="button"><i data-cicon="check"></i>Save prices</button></div>';
   }
 
+  function updateExportScope() {
+    if (!c) return;
+    const scope = tab === "cylinders" ? "customer-cylinders:" + c.id :
+      tab === "prices" ? "customer-prices:" + c.id : "customer:" + c.id;
+    $("cd-export").dataset.scope = scope;
+    $("cd-statement").dataset.scope = "customer:" + c.id;
+  }
   function renderTab() {
     document.querySelectorAll("[data-tab]").forEach((t) => t.classList.toggle("on", t.dataset.tab === tab));
+    updateExportScope();
     $("cd-panel").innerHTML = tab === "ledger" ? ledgerHtml() : tab === "cylinders" ? cylindersHtml() : pricesHtml();
     Cust.renderIcons($("cd-panel"));
   }

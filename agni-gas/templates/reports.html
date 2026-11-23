@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block page_styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/reports.css') }}">
+{% endblock %}
+
+{% block content %}
+<div id="reports-error" class="banner banner-error" hidden>
+  <span id="reports-error-text">Could not load reports.</span>
+  <button class="btn btn-ghost btn-sm" id="reports-retry" type="button">Retry</button>
+</div>
+
+<section class="reports-heading">
+  <div>
+    <h1 class="page-title">Reports</h1>
+    <p class="reports-caption" id="reports-period-caption">Business performance for this month</p>
+  </div>
+  <div class="reports-actions">
+    <div class="reports-export-wrap">
+      <button class="btn btn-dark" id="reports-export-toggle" type="button" aria-expanded="false">
+        <i data-icon="download"></i> Export <i data-icon="chevronDown"></i>
+      </button>
+      <div class="reports-export-menu" id="reports-export-menu" hidden>
+        <button type="button" data-export="pdf"><i data-icon="fileText"></i> PDF report</button>
+        <button type="button" data-export="xlsx"><i data-icon="sheet"></i> CA Excel workbook</button>
+      </div>
+    </div>
+    <button class="btn btn-ghost" id="reports-print" type="button"><i data-icon="printer"></i> Print</button>
+  </div>
+</section>
+
+<div class="reports-print-meta">
+  <strong data-biz-name>Agni Gas Agency</strong>
+  <span id="reports-print-period"></span>
+  <span id="reports-print-generated"></span>
+</div>
+
+<section class="reports-filters" aria-label="Report period">
+  <div class="reports-period-chips">
+    <button class="period-chip" type="button" data-period="today">Today</button>
+    <button class="period-chip" type="button" data-period="7d">Last 7 days</button>
+    <button class="period-chip is-active" type="button" data-period="month">This month</button>
+    <button class="period-chip" type="button" data-period="all">All</button>
+    <button class="period-chip" type="button" data-period="custom">Custom</button>
+  </div>
+  <div class="reports-custom-range" id="reports-custom-range" hidden>
+    <label>From <input type="date" id="reports-from"></label>
+    <label>To <input type="date" id="reports-to"></label>
+    <button class="btn btn-dark btn-sm" type="button" id="reports-apply-custom">Apply</button>
+    <span class="reports-range-error" id="reports-range-error" role="alert"></span>
+  </div>
+</section>
+<p class="reports-caption">The CA Excel workbook is a formatted 20-sheet report with a plain-English overview, invoice and item registers, ledgers, GST summaries, FIFO inventory costing, cylinder-shell assets, deposit schedules and reconciliation checks. Sales tax is shown from saved invoice lines; purchase GST is stored at supplier-bill level and should be checked against the attached tax invoices.</p>
+
+<section class="reports-kpis" aria-label="Key figures">
+  <article class="reports-kpi">
+    <span class="reports-kpi-icon kpi-sales"><i data-icon="indianRupee"></i></span>
+    <div><div class="reports-kpi-label">Sales billed</div><strong id="kpi-sales">Rs 0</strong><small id="kpi-bills">0 bills · incl. GST, excl. refundable deposits</small></div>
+  </article>
+  <article class="reports-kpi">
+    <span class="reports-kpi-icon kpi-cash"><i data-icon="wallet"></i></span>
+    <div><div class="reports-kpi-label">Cash received</div><strong id="kpi-cash">Rs 0</strong><small>Invoice receipts + later collections; includes deposits</small></div>
+  </article>
+  <article class="reports-kpi">
+    <span class="reports-kpi-icon kpi-purchases"><i data-icon="shoppingCart"></i></span>
+    <div><div class="reports-kpi-label">Purchases</div><strong id="kpi-purchases">Rs 0</strong><small id="kpi-purchase-bills">0 purchase bills</small></div>
+  </article>
+  <article class="reports-kpi">
+    <span class="reports-kpi-icon kpi-profit"><i data-icon="trendingUp"></i></span>
+    <div><div class="reports-kpi-label">Est. gross profit</div><strong id="kpi-profit">Rs 0</strong><small id="kpi-cylinders">0 cylinders sold</small></div>
+  </article>
+</section>
+
+<section class="reports-main-grid">
+  <article class="card reports-panel reports-chart-panel">
+    <div class="reports-panel-head">
+      <div><h2 class="card-title">Sales by day</h2><p class="card-sub">Sales value, excluding refundable cylinder deposits</p></div>
+      <div class="reports-chart-stat"><span>Average a day</span><strong id="reports-average">Rs 0</strong></div>
+    </div>
+    <div class="reports-best-day" id="reports-best-day">Best: —</div>
+    <div class="reports-chart-scroll"><div class="reports-bars" id="reports-bars"></div></div>
+    <div class="reports-chart-empty" id="reports-chart-empty" hidden>No sales recorded for this period.</div>
+  </article>
+  <article class="card reports-panel reports-money-panel">
+    <div class="reports-panel-head"><div><h2 class="card-title">Money in</h2><p class="card-sub">Sale receipts and customer collections</p></div></div>
+    <div class="reports-table-wrap">
+      <table class="reports-table"><thead><tr><th>Method</th><th>Count</th><th class="num">Amount</th></tr></thead><tbody id="reports-money-body"></tbody></table>
+    </div>
+    <div class="reports-empty" id="reports-money-empty" hidden>No money received in this period.</div>
+  </article>
+</section>
+
+<section class="reports-secondary-grid">
+  <article class="card reports-panel">
+    <div class="reports-panel-head"><div><h2 class="card-title">Sales by item</h2><p class="card-sub">Sales include GST; FIFO COGS and gross margin exclude GST and refundable deposits</p></div></div>
+    <div class="reports-table-wrap">
+      <table class="reports-table"><thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Sales</th><th class="num">FIFO COGS</th><th class="num">Gross margin*</th></tr></thead><tbody id="reports-items-body"></tbody></table>
+    </div>
+    <div class="reports-empty" id="reports-items-empty" hidden>No sales items in this period.</div>
+  </article>
+  <article class="card reports-panel">
+    <div class="reports-panel-head"><div><h2 class="card-title">Summary</h2><p class="card-sub">Period totals and selected period-end balances</p></div></div>
+    <dl class="reports-summary" id="reports-summary"></dl>
+    <div class="reports-summary-divider"></div>
+    <div class="reports-snapshot-title">Balances at period end</div>
+    <dl class="reports-summary" id="reports-snapshots"></dl>
+  </article>
+</section>
+
+<section class="reports-notes" id="reports-notes-wrap" hidden>
+  <strong>Report notes</strong>
+  <ul id="reports-notes"></ul>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/reports.js') }}"></script>
+{% endblock %}

@@ -80,9 +80,64 @@ window.Cust = (function () {
   }
 
   /* ---------- export menu (PDF / Excel) ---------- */
-  // Wire the real export here later. scope: "customers" | "payments" | "customer:<id>" | "statement:<id>"
+  function localIso(d) {
+    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+    return local.toISOString().slice(0, 10);
+  }
+  function rangeParams(kind, mode, fromId, toId) {
+    const p = new URLSearchParams();
+    const now = new Date();
+    let from = "", to = "";
+    if (mode === "today") from = to = localIso(now);
+    else if (mode === "7d") { const start = new Date(now); start.setDate(start.getDate() - 6); from = localIso(start); to = localIso(now); }
+    else if (mode === "month") { from = localIso(new Date(now.getFullYear(), now.getMonth(), 1)); to = localIso(now); }
+    else if (mode === "custom") { from = document.getElementById(fromId)?.value || ""; to = document.getElementById(toId)?.value || ""; }
+    if (from) p.set("from", from);
+    if (to) p.set("to", to);
+    return p;
+  }
+  function exportParams(scope) {
+    const p = new URLSearchParams();
+    const value = (id) => document.getElementById(id)?.value?.trim() || "";
+    if (scope === "sales") {
+      const mode = document.querySelector("#sl-chips .chip.on")?.dataset.range || "today";
+      const dates = rangeParams("sales", mode, "sl-from", "sl-to");
+      dates.forEach((v, k) => p.set(k, v));
+      if (value("sl-search")) p.set("q", value("sl-search"));
+    } else if (scope === "customers") {
+      const mode = document.querySelector("#chips .chip.on")?.dataset.type || "all";
+      if (value("search")) p.set("q", value("search"));
+      if (mode === "retail" || mode === "wholesale") p.set("type", mode);
+      if (mode === "udhaar") p.set("owing", "1");
+    } else if (scope === "payments") {
+      if (value("pay-search")) p.set("q", value("pay-search"));
+      if (value("pay-from")) p.set("from", value("pay-from"));
+      if (value("pay-to")) p.set("to", value("pay-to"));
+    } else if (scope === "suppliers") {
+      if (value("sp-supplier-search")) p.set("q", value("sp-supplier-search"));
+    } else if (scope === "purchases") {
+      const mode = document.querySelector("#sp-periods .chip.on")?.dataset.period || "month";
+      const dates = rangeParams("purchases", mode, "sp-from", "sp-to");
+      dates.forEach((v, k) => p.set(k, v));
+    } else if (scope === "stock-history") {
+      const holder = document.querySelector('[data-scope="stock-history"]');
+      if (holder?.dataset.cylinderTypeId) p.set("cylinder_type_id", holder.dataset.cylinderTypeId);
+    }
+    return p;
+  }
   function exportData(kind, scope) {
-    toast("Export (" + (kind === "pdf" ? "PDF" : "Excel") + ") will be added in the export step.");
+    if (!scope) { toast("Could not identify which section to export.", "error"); return; }
+    const format = kind === "pdf" ? "pdf" : "xlsx";
+    const params = exportParams(scope);
+    params.set("format", format);
+    const base = (window.APP_CONFIG && window.APP_CONFIG.apiBase) || "";
+    const url = base + "/api/exports/" + encodeURIComponent(scope) + "?" + params.toString();
+    const link = document.createElement("a");
+    link.href = url;
+    link.style.display = "none";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
   }
   document.addEventListener("click", (e) => {
     const toggle = e.target.closest("[data-menu-toggle]");
@@ -91,7 +146,12 @@ window.Cust = (function () {
       else m.hidden = true;
     });
     const ex = e.target.closest("[data-export]");
-    if (ex) exportData(ex.dataset.export, (ex.closest("[data-scope]") || {}).dataset?.scope);
+    if (ex) {
+      const scoped = ex.closest("[data-scope]") || ex;
+      exportData(ex.dataset.export, scoped.dataset?.scope);
+      const menu = ex.closest(".menu");
+      if (menu) menu.hidden = true;
+    }
   });
 
   /* ---------- reference options and opening customer cylinders ---------- */
@@ -279,7 +339,8 @@ window.Cust = (function () {
       '<div class="field"><span>Amount received</span><div class="amt-row">' +
       '<div class="amt"><i>Rs</i><input name="amount" inputmode="decimal" placeholder="0" autocomplete="off"></div>' +
       (owed > 0 ? '<button type="button" class="btn btn-soft" data-full>Full</button>' : "") + "</div>" +
-      '<em class="err" data-err="amount"></em><small class="hint" data-hint></small></div>' +
+      '<em class="err" data-err="amount"></em><small class="hint" data-hint></small>' +
+      '<small class="hint">Clears any opening balance first, then applies to the oldest outstanding invoice. Extra remains as customer advance.</small></div>' +
       '<div class="two"><label class="field"><span>Received in</span><select class="select" name="received_in">' +
       '<option value="cash">Cash in hand</option><option value="bank">Bank / UPI</option></select></label>' +
       '<label class="field"><span>Date</span><input class="input" type="date" name="date" max="' + today() + '"></label></div>' +

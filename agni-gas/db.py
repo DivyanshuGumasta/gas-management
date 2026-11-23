@@ -50,6 +50,17 @@ def init_db(path: str | None = None) -> None:
                 "state_code": "TEXT",
                 "billing_address": "TEXT",
             },
+            "purchases": {
+                "supplier_invoice_number": "TEXT",
+            },
+            # v0.8.0: preserve the actual non-refundable acquisition cost of a
+            # new empty cylinder separately from its refundable supplier bond.
+            "purchase_items": {
+                "new_empty_cost_paise": "INTEGER NOT NULL DEFAULT 0",
+            },
+            "supplier_items": {
+                "new_empty_cost_paise": "INTEGER NOT NULL DEFAULT 0",
+            },
             "sales": {
                 "cgst_paise": "INTEGER NOT NULL DEFAULT 0",
                 "sgst_paise": "INTEGER NOT NULL DEFAULT 0",
@@ -66,6 +77,12 @@ def init_db(path: str | None = None) -> None:
             "sale_lines": {
                 "supplier_id": "INTEGER REFERENCES suppliers(id)",
                 "retained_paise": "INTEGER NOT NULL DEFAULT 0",
+            },
+            # Store the acquisition cost used for opening/stock-adjustment layers.
+            # Existing rows stay NULL and are transparently costed at the current
+            # saved purchase rate by the Reports FIFO reconstruction.
+            "catalog_adjustments": {
+                "unit_cost_paise": "INTEGER",
             },
             "customer_deposit_events": {
                 "supplier_id": "INTEGER REFERENCES suppliers(id)",

@@ -15,6 +15,7 @@ import threading
 from werkzeug.serving import make_server
 
 from app import app
+from backup import start_backup_scheduler
 
 TITLE = "Agni Gas Agency"
 
@@ -55,6 +56,7 @@ def _app_window_fallback(url: str) -> None:
 
 
 def main() -> None:
+    backup_stop, backup_thread = start_backup_scheduler()
     port = _free_port()
     server = make_server("127.0.0.1", port, app, threaded=True)
     threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -72,6 +74,8 @@ def main() -> None:
         _app_window_fallback(url)
 
     server.shutdown()
+    backup_stop.set()
+    backup_thread.join(timeout=2)
     sys.exit(0)
 
 

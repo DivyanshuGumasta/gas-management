@@ -17,9 +17,9 @@ PAGES = {
     "/suppliers-purchases": ("suppliers_purchases.html", "suppliers_purchases", "Suppliers & Purchases", ""),
     "/purchases/new": ("purchase_new.html", "suppliers_purchases", "New purchase", "Record supplier invoice and incoming stock"),
     "/stock": ("stock.html", "stock", "Stock & Price", "Cylinder stock, prices, damaged stock, history"),
-    "/reports": ("placeholder.html", "reports", "Reports", "The five business reports, PDF and Excel export"),
-    "/data": ("placeholder.html", "data", "Data & Backup", "Backup, restore, export and import"),
-    "/help": ("placeholder.html", "help", "Help & support", "Support contacts"),
+    "/reports": ("reports.html", "reports", "Reports", "Sales, collections, purchases, GST and stock costing"),
+    "/data": ("data.html", "data", "Data & Backup", "Record counts and database backup"),
+    "/help": ("help.html", "help", "Help & support", "Contact the support team"),
 }
 
 
@@ -31,17 +31,29 @@ def create_app() -> Flask:
     )
 
     from api import api_bp
-    from backup import daily_backup
+    from backup import maybe_create_automatic_backup
     from db import close_db, init_db
 
     init_db()
     try:
-        daily_backup()
+        maybe_create_automatic_backup()
     except Exception as exc:  # a failed backup must never stop the app opening
-        app.logger.warning("Daily backup failed: %s", exc)
+        app.logger.warning("Automatic backup failed: %s", exc)
 
     app.teardown_appcontext(close_db)
     app.register_blueprint(api_bp, url_prefix="/api")
+
+    # Request-time fallback for embedded Flask deployments. The normal desktop
+    # and direct launchers also run a lightweight scheduler while the app is open.
+    @app.before_request
+    def automatic_backup_if_due():
+        if request.endpoint == "static":
+            return None
+        try:
+            maybe_create_automatic_backup()
+        except Exception as exc:
+            app.logger.warning("Automatic backup failed: %s", exc)
+        return None
 
     def make_view(template, nav, title, note):
         def view(**_kwargs):
@@ -83,4 +95,10 @@ def create_app() -> Flask:
 app = create_app()
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5000, debug=os.environ.get("AGNI_DEBUG") == "1")
+    from backup import start_backup_scheduler
+
+    backup_stop, _backup_thread = start_backup_scheduler()
+    try:
+        app.run(host="127.0.0.1", port=5000, debug=os.environ.get("AGNI_DEBUG") == "1")
+    finally:
+        backup_stop.set()
