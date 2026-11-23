@@ -81,7 +81,7 @@ class InvoiceTests(unittest.TestCase):
         self.assertEqual(changed.status_code, 200, changed.get_json())
         old_detail = self.client.get(f"/api/sales/{invoice_id}").get_json()
         self.assertEqual(old_detail["lines"][0]["hsn"], "27111910")
-        self.assertEqual(old_detail["lines"][0]["gst_rate"], 18)
+        self.assertEqual(old_detail["lines"][0]["gst_rate"], "18")
 
     def test_new_full_deposit_is_separate_from_taxable_value(self):
         cylinder = self.make_cylinder()
@@ -230,9 +230,11 @@ class InvoiceTests(unittest.TestCase):
             "lines": [{"cylinder_type_id": cylinder["id"], "refill": 1, "rate": "100"}],
             "items": [], "payment": "paid", "received_in": "cash",
         })
-        self.assertEqual(response.status_code, 422, response.get_json())
-        self.assertIn("Reverse-charge", response.get_json()["error"])
-        self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM sales").fetchone()[0], before)
+        self.assertEqual(response.status_code, 201, response.get_json())
+        detail = self.client.get(f"/api/sales/{response.get_json()['id']}").get_json()
+        self.assertFalse(detail["reverse_charge"])
+        self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM sales").fetchone()[0], before + 1)
+
 
     def test_duplicate_cylinder_rows_are_rejected(self):
         cylinder = self.make_cylinder()
@@ -268,7 +270,7 @@ class InvoiceTests(unittest.TestCase):
         self.assertEqual([(e["kind"], e["qty"], e["amount_paise"]) for e in events],
                          [("received", 1, 0), ("forfeited", 1, 0)])
 
-    def test_paid_invoice_cannot_be_cancelled_without_refund_workflow(self):
+    def test_paid_invoice_can_be_cancelled_with_refund_workflow(self):
         cylinder = self.make_cylinder()
         customer = self.make_customer()
         issued = self.sell(cylinder, customer, new_full=1)
@@ -276,10 +278,23 @@ class InvoiceTests(unittest.TestCase):
         response = self.sell(cylinder, customer, refill=1)
         self.assertEqual(response.status_code, 201, response.get_json())
         sale_id = response.get_json()["id"]
-        before = self.conn.execute("SELECT full_qty FROM cylinder_types WHERE id=?", (cylinder["id"],)).fetchone()[0]
-        cancelled = self.client.post(f"/api/sales/{sale_id}/cancel", json={})
-        self.assertEqual(cancelled.status_code, 409, cancelled.get_json())
-        self.assertEqual(self.conn.execute("SELECT full_qty FROM cylinder_types WHERE id=?", (cylinder["id"],)).fetchone()[0], before)
+        before = self.conn.execute(
+            "SELECT full_qty,empty_qty FROM cylinder_types WHERE id=?", (cylinder["id"],)
+        ).fetchone()
+        cancelled = self.client.post(f"/api/sales/{sale_id}/cancel", json={"reason": "Test cancellation"})
+        self.assertEqual(cancelled.status_code, 200, cancelled.get_json())
+        self.assertEqual(cancelled.get_json(), {"ok": True, "refund": "118.00", "refund_direction": "refund", "received_in": "cash"})
+        after = self.conn.execute(
+            "SELECT full_qty,empty_qty FROM cylinder_types WHERE id=?", (cylinder["id"],)
+        ).fetchone()
+        self.assertEqual((after["full_qty"], after["empty_qty"]), (before["full_qty"] + 1, before["empty_qty"] - 1))
+        detail = self.client.get(f"/api/sales/{sale_id}").get_json()
+        self.assertEqual(detail["status"], "cancelled")
+        self.assertEqual(detail["cancel_reason"], "Test cancellation")
+        self.assertTrue(detail["cancelled_at"])
+        self.assertEqual(detail["paid"], "118.00")
+        self.assertEqual(self.client.post(f"/api/sales/{sale_id}/cancel", json={}).status_code, 409)
+
 
     def test_unpaid_credit_invoice_can_be_cancelled_and_restores_stock(self):
         cylinder = self.make_cylinder()
@@ -316,15 +331,27 @@ class InvoiceTests(unittest.TestCase):
         after = self.conn.execute("SELECT COUNT(*) FROM sales").fetchone()[0]
         self.assertEqual(after, before)
 
-    def test_refill_requires_a_customer_held_cylinder(self):
+    def test_refill_does_not_require_a_customer_held_cylinder(self):
         cylinder = self.make_cylinder()
         customer = self.make_customer()
-        before = self.conn.execute("SELECT COUNT(*) FROM sales").fetchone()[0]
+        before = self.conn.execute(
+            "SELECT full_qty,empty_qty,with_customers_qty FROM cylinder_types WHERE id=?",
+            (cylinder["id"],),
+        ).fetchone()
         response = self.sell(cylinder, customer, refill=1)
-        self.assertEqual(response.status_code, 409, response.get_json())
-        self.assertIn("customer holds only", response.get_json()["error"].lower())
-        after = self.conn.execute("SELECT COUNT(*) FROM sales").fetchone()[0]
-        self.assertEqual(after, before)
+        self.assertEqual(response.status_code, 201, response.get_json())
+        after = self.conn.execute(
+            "SELECT full_qty,empty_qty,with_customers_qty FROM cylinder_types WHERE id=?",
+            (cylinder["id"],),
+        ).fetchone()
+        self.assertEqual((after["full_qty"], after["empty_qty"]), (before["full_qty"] - 1, before["empty_qty"] + 1))
+        self.assertEqual(after["with_customers_qty"], before["with_customers_qty"])
+        held = self.conn.execute(
+            "SELECT COALESCE(SUM(delta),0) FROM cylinder_ledger WHERE customer_id=? AND cylinder_type_id=?",
+            (customer["id"], cylinder["id"]),
+        ).fetchone()[0]
+        self.assertEqual(held, 0)
+
 
     def test_refill_and_return_cannot_use_the_same_held_cylinder_twice(self):
         cylinder = self.make_cylinder()
@@ -338,7 +365,7 @@ class InvoiceTests(unittest.TestCase):
         after = self.conn.execute("SELECT COUNT(*) FROM sales").fetchone()[0]
         self.assertEqual(after, before)
 
-    def test_invoice_gst_rate_can_override_stock_rate_without_changing_stock(self):
+    def test_invoice_ignores_gst_rate_override_and_uses_stock_rate(self):
         cylinder = self.make_cylinder()
         customer = self.make_customer()
         issued = self.sell(cylinder, customer, new_full=1)
@@ -347,13 +374,13 @@ class InvoiceTests(unittest.TestCase):
         response = self.sell(cylinder, customer, refill=1, gst_rate="5")
         self.assertEqual(response.status_code, 201, response.get_json())
         detail = self.client.get(f"/api/sales/{response.get_json()['id']}").get_json()
-        self.assertEqual(detail["lines"][0]["gst_rate"], 5)
-        self.assertEqual(detail["gst"], "5.00")
-        self.assertEqual(detail["total"], "105.00")
-
+        self.assertEqual(detail["lines"][0]["gst_rate"], "18")
+        self.assertEqual(detail["gst"], "18.00")
+        self.assertEqual(detail["total"], "118.00")
         stock = self.client.get("/api/stock").get_json()
         saved = next(x for x in stock["cylinders"] if x["id"] == cylinder["id"])
-        self.assertEqual(float(saved["gst_rate"]), 18.0)
+        self.assertEqual(saved["gst_rate"], "18")
+
 
     def test_invoice_pdf_endpoint_returns_a_downloadable_pdf(self):
         cylinder = self.make_cylinder()

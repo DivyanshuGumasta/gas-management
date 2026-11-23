@@ -1,0 +1,96 @@
+test_catalog_items_and_other_goods_purchase (test_api.ApiTests.test_catalog_items_and_other_goods_purchase) ... ok
+test_customers (test_api.ApiTests.test_customers) ... ok
+test_damaged_cylinder_dispatch_does_not_refund_or_change_supplier_account (test_api.ApiTests.test_damaged_cylinder_dispatch_does_not_refund_or_change_supplier_account) ... ok
+test_dashboard (test_api.ApiTests.test_dashboard) ... ok
+test_money (test_api.ApiTests.test_money) ... ok
+test_next_number_unique (test_api.ApiTests.test_next_number_unique) ... ok
+test_pages (test_api.ApiTests.test_pages) ... /run/media/divyanshu/BC36607536603296/lxw/official projects/agni-gas/.venv/lib64/python3.14/site-packages/markupsafe/__init__.py:129: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7fddf845bb50>
+  return super().__new__(cls, object)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+test_purchase_options_only_show_supplier_links (test_api.ApiTests.test_purchase_options_only_show_supplier_links) ... ok
+test_sole_supplier_auto_link_helpers (test_api.ApiTests.test_sole_supplier_auto_link_helpers) ... ok
+test_supplier_purchase_workflow (test_api.ApiTests.test_supplier_purchase_workflow) ... ok
+test_suppliers (test_api.ApiTests.test_suppliers) ... ok
+test_add_cylinder_with_deposit_and_sale_price (test_deposit.DepositTests.test_add_cylinder_with_deposit_and_sale_price) ... ok
+test_migration_adds_column_to_old_database (test_deposit.DepositTests.test_migration_adds_column_to_old_database) ... ok
+test_new_full_cannot_exceed_full_in (test_deposit.DepositTests.test_new_full_cannot_exceed_full_in) ... ok
+test_new_full_priced_at_rate_plus_deposit (test_deposit.DepositTests.test_new_full_priced_at_rate_plus_deposit) ... ok
+test_old_requests_still_work (test_deposit.DepositTests.test_old_requests_still_work)
+No new_full / deposit sent: behaves exactly like v0.3.6 (saved deposit used). ... ok
+test_agency_pan_must_be_valid_and_match_gstin (test_invoice_document.InvoiceDocumentTests.test_agency_pan_must_be_valid_and_match_gstin) ... ok
+test_amount_in_words_uses_indian_currency_groups_and_paise (test_invoice_document.InvoiceDocumentTests.test_amount_in_words_uses_indian_currency_groups_and_paise) ... ok
+test_cancelling_negative_paid_back_invoice_reports_collection_direction (test_invoice_document.InvoiceDocumentTests.test_cancelling_negative_paid_back_invoice_reports_collection_direction) ... ok
+test_invoice_payload_and_pdf_include_retained_deposit_and_tax_document_fields (test_invoice_document.InvoiceDocumentTests.test_invoice_payload_and_pdf_include_retained_deposit_and_tax_document_fields) ... ok
+test_backdated_purchase_is_older (test_lots.LotTests.test_backdated_purchase_is_older) ... ok
+test_cancel_restores_to_the_same_lots (test_lots.LotTests.test_cancel_restores_to_the_same_lots) ... ok
+test_existing_stock_becomes_opening_lot_on_upgrade (test_lots.LotTests.test_existing_stock_becomes_opening_lot_on_upgrade) ... ok
+test_oldest_goes_first_and_cost_is_exact (test_lots.LotTests.test_oldest_goes_first_and_cost_is_exact) ... ok
+test_price_change_does_not_touch_old_lots (test_lots.LotTests.test_price_change_does_not_touch_old_lots)
+Bought at 1300, price becomes 1400: the 1300 cylinders still cost 1300. ... ok
+test_purchase_creates_lot_with_pid_and_rate (test_lots.LotTests.test_purchase_creates_lot_with_pid_and_rate) ... ok
+test_short_lots_fall_back_to_latest_price (test_lots.LotTests.test_short_lots_fall_back_to_latest_price) ... ok
+test_customer_held_cylinders_endpoint_groups_by_cylinder_type (test_sales_invoice.InvoiceTests.test_customer_held_cylinders_endpoint_groups_by_cylinder_type) ... ok
+test_damaged_customer_return_cannot_overforfeit_supplier_deposit (test_sales_invoice.InvoiceTests.test_damaged_customer_return_cannot_overforfeit_supplier_deposit) ... ok
+test_damaged_customer_return_forfeits_customer_deposit_and_marks_stock (test_sales_invoice.InvoiceTests.test_damaged_customer_return_forfeits_customer_deposit_and_marks_stock) ... ok
+test_damaged_customer_return_forfeits_the_matching_supplier_deposit (test_sales_invoice.InvoiceTests.test_damaged_customer_return_forfeits_the_matching_supplier_deposit) ... ok
+test_duplicate_cylinder_rows_are_rejected (test_sales_invoice.InvoiceTests.test_duplicate_cylinder_rows_are_rejected) ... ok
+test_failed_stock_validation_does_not_create_invoice (test_sales_invoice.InvoiceTests.test_failed_stock_validation_does_not_create_invoice) ... ok
+test_good_empty_refund_updates_only_customer_deposit_ledger (test_sales_invoice.InvoiceTests.test_good_empty_refund_updates_only_customer_deposit_ledger) ... ok
+test_invoice_ignores_gst_rate_override_and_uses_stock_rate (test_sales_invoice.InvoiceTests.test_invoice_ignores_gst_rate_override_and_uses_stock_rate) ... ok
+test_invoice_pdf_endpoint_returns_a_downloadable_pdf (test_sales_invoice.InvoiceTests.test_invoice_pdf_endpoint_returns_a_downloadable_pdf) ... ok
+test_missing_product_hsn_or_gst_blocks_final_invoice (test_sales_invoice.InvoiceTests.test_missing_product_hsn_or_gst_blocks_final_invoice) ... ok
+test_new_full_deposit_is_separate_from_taxable_value (test_sales_invoice.InvoiceTests.test_new_full_deposit_is_separate_from_taxable_value) ... ok
+test_nonzero_gst_requires_agency_gstin (test_sales_invoice.InvoiceTests.test_nonzero_gst_requires_agency_gstin) ... ok
+test_paid_invoice_can_be_cancelled_with_refund_workflow (test_sales_invoice.InvoiceTests.test_paid_invoice_can_be_cancelled_with_refund_workflow) ... ok
+test_product_hsn_is_snapshotted_and_tax_is_split (test_sales_invoice.InvoiceTests.test_product_hsn_is_snapshotted_and_tax_is_split) ... ok
+test_refill_and_return_cannot_use_the_same_held_cylinder_twice (test_sales_invoice.InvoiceTests.test_refill_and_return_cannot_use_the_same_held_cylinder_twice) ... ok
+test_refill_does_not_require_a_customer_held_cylinder (test_sales_invoice.InvoiceTests.test_refill_does_not_require_a_customer_held_cylinder) ... ok
+test_reverse_charge_is_not_silently_treated_as_forward_charge (test_sales_invoice.InvoiceTests.test_reverse_charge_is_not_silently_treated_as_forward_charge) ... ok
+test_unpaid_credit_invoice_can_be_cancelled_and_restores_stock (test_sales_invoice.InvoiceTests.test_unpaid_credit_invoice_can_be_cancelled_and_restores_stock) ... ok
+test_zero_security_still_tracks_issued_cylinder_for_damage_return (test_sales_invoice.InvoiceTests.test_zero_security_still_tracks_issued_cylinder_for_damage_return) ... ok
+test_add_cylinder_with_starting_stock_makes_a_lot_and_history (test_stock.StockTests.test_add_cylinder_with_starting_stock_makes_a_lot_and_history) ... ok
+test_adjust_cylinder_up_and_down (test_stock.StockTests.test_adjust_cylinder_up_and_down) ... ok
+test_damaged_counts (test_stock.StockTests.test_damaged_counts) ... ok
+test_delete_cylinder_rules (test_stock.StockTests.test_delete_cylinder_rules) ... ok
+test_history_limit_and_filter (test_stock.StockTests.test_history_limit_and_filter) ... ok
+test_item_adjust_history_and_delete (test_stock.StockTests.test_item_adjust_history_and_delete) ... ok
+test_item_wholesale_price_round_trip (test_stock.StockTests.test_item_wholesale_price_round_trip) ... ok
+test_overview_shape (test_stock.StockTests.test_overview_shape) ... ok
+test_prices_do_not_touch_lots (test_stock.StockTests.test_prices_do_not_touch_lots) ... ok
+test_adjust_one_supplier (test_stock_suppliers.StockSupplierTests.test_adjust_one_supplier) ... ok
+test_change_price_and_deposit_for_one_supplier_only (test_stock_suppliers.StockSupplierTests.test_change_price_and_deposit_for_one_supplier_only) ... ok
+test_damaged_empty_cancels_that_suppliers_deposit (test_stock_suppliers.StockSupplierTests.test_damaged_empty_cancels_that_suppliers_deposit) ... ok
+test_damaged_full_takes_from_that_suppliers_lots (test_stock_suppliers.StockSupplierTests.test_damaged_full_takes_from_that_suppliers_lots) ... ok
+test_each_supplier_has_own_price_deposit_and_stock (test_stock_suppliers.StockSupplierTests.test_each_supplier_has_own_price_deposit_and_stock) ... ok
+test_lots_remember_supplier (test_stock_suppliers.StockSupplierTests.test_lots_remember_supplier) ... ok
+test_purchase_tracks_supplier_empties (test_stock_suppliers.StockSupplierTests.test_purchase_tracks_supplier_empties) ... ok
+test_send_back_refunds_real_money_to_cash_or_bank (test_stock_suppliers.StockSupplierTests.test_send_back_refunds_real_money_to_cash_or_bank) ... ok
+test_cancel_is_blocked_when_supplier_empty_stock_was_already_used (test_v062.V062Tests.test_cancel_is_blocked_when_supplier_empty_stock_was_already_used) ... ok
+test_cancel_reason_over_200_characters_is_rejected (test_v062.V062Tests.test_cancel_reason_over_200_characters_is_rejected) ... ok
+test_cancelling_a_paid_back_invoice_reports_amount_to_collect (test_v062.V062Tests.test_cancelling_a_paid_back_invoice_reports_amount_to_collect) ... ok
+test_customer_creation_records_multiple_supplier_owned_opening_cylinders (test_v062.V062Tests.test_customer_creation_records_multiple_supplier_owned_opening_cylinders) ... ok
+test_damaged_return_forfeits_customer_deposit_and_only_selected_supplier_deposit (test_v062.V062Tests.test_damaged_return_forfeits_customer_deposit_and_only_selected_supplier_deposit) ... ok
+test_dashboard_sales_value_excludes_deposits (test_v062.V062Tests.test_dashboard_sales_value_excludes_deposits) ... ok
+test_discount_largest_remainder_is_exact_and_deterministic (test_v062.V062Tests.test_discount_largest_remainder_is_exact_and_deterministic) ... ok
+test_good_empty_return_refunds_recorded_deposit_by_default (test_v062.V062Tests.test_good_empty_return_refunds_recorded_deposit_by_default) ... ok
+test_good_return_cannot_refund_more_than_outstanding_deposit (test_v062.V062Tests.test_good_return_cannot_refund_more_than_outstanding_deposit) ... ok
+test_gst_rate_text_and_request_tax_overrides_are_ignored (test_v062.V062Tests.test_gst_rate_text_and_request_tax_overrides_are_ignored) ... ok
+test_holdings_adds_legacy_ledger_only_cylinders_as_unassigned_zero_deposit (test_v062.V062Tests.test_holdings_adds_legacy_ledger_only_cylinders_as_unassigned_zero_deposit) ... ok
+test_invalid_opening_row_rolls_back_customer_creation (test_v062.V062Tests.test_invalid_opening_row_rolls_back_customer_creation) ... ok
+test_invoice_with_damaged_cylinder_already_dispatched_cannot_be_cancelled (test_v062.V062Tests.test_invoice_with_damaged_cylinder_already_dispatched_cannot_be_cancelled) ... ok
+test_legacy_invoice_detail_has_fallback_customer_and_sale_item_lines (test_v062.V062Tests.test_legacy_invoice_detail_has_fallback_customer_and_sale_item_lines) ... ok
+test_opening_cylinders_endpoint_adds_existing_customer_holdings (test_v062.V062Tests.test_opening_cylinders_endpoint_adds_existing_customer_holdings) ... ok
+test_paid_invoice_can_be_cancelled_with_reason_and_refund_amount (test_v062.V062Tests.test_paid_invoice_can_be_cancelled_with_reason_and_refund_amount) ... ok
+test_partial_customer_deposit_refund_preserves_remaining_holding (test_v062.V062Tests.test_partial_customer_deposit_refund_preserves_remaining_holding) ... ok
+test_refill_succeeds_for_customer_with_zero_held_and_updates_supplier_empties (test_v062.V062Tests.test_refill_succeeds_for_customer_with_zero_held_and_updates_supplier_empties) ... ok
+test_return_empties_endpoint_is_gone (test_v062.V062Tests.test_return_empties_endpoint_is_gone) ... ok
+test_sales_summary_excludes_deposits_and_row_keeps_invoice_total (test_v062.V062Tests.test_sales_summary_excludes_deposits_and_row_keeps_invoice_total) ... ok
+test_sales_summary_uses_all_matching_bills_beyond_500_row_cap (test_v062.V062Tests.test_sales_summary_uses_all_matching_bills_beyond_500_row_cap) ... ok
+test_states_endpoint_is_sorted_and_uses_existing_reference (test_v062.V062Tests.test_states_endpoint_is_sorted_and_uses_existing_reference) ... ok
+test_two_suppliers_require_explicit_stock_supplier_but_one_is_automatic (test_v062.V062Tests.test_two_suppliers_require_explicit_stock_supplier_but_one_is_automatic) ... ok
+
+----------------------------------------------------------------------
+Ran 86 tests in 5.834s
+
+OK

@@ -1,7 +1,7 @@
 /* Sales screens: list (sales.html), new sale (sales_new.html), receipt (sale_detail.html). */
 
 /* ---------- list ---------- */
-.sl-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 16px; }
+.sl-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 16px; }
 .sl-stat { padding: 16px 20px; background: #fff; border: 1px solid #b4b3c8; border-radius: 14px; display: flex; flex-direction: column; gap: 4px; }
 .sl-stat small { font-size: 12px; color: var(--muted); }
 .sl-stat b { font-size: 24px; }
@@ -15,7 +15,8 @@
 .sl-due { font-size: 11px; color: var(--red); font-weight: 600; }
 .badge-udhaar { background: var(--red-soft); color: var(--red); }
 .sl-row.is-cancelled .row-name b, .sl-row.is-cancelled .strike { text-decoration: line-through; color: #9a9ab5; }
-@media (max-width: 700px) { .sl-stats { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .sl-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .sl-stats { grid-template-columns: 1fr; } }
 
 /* ---------- new sale ---------- */
 .sn-customer-row { display: flex; gap: 12px; align-items: stretch; margin-bottom: 8px; }
@@ -158,3 +159,42 @@
 .sn-product-tax label { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
 .sn-product-tax input { width: 58px; min-height: 24px; padding: 2px 5px; border: 1px solid var(--line, #d7d7df); border-radius: 6px; background: var(--surface, #fff); color: var(--text, #20202a); font: inherit; }
 .sn-held-count { color: var(--muted); }
+
+/* v0.6.2 customer holdings, supplier selection, and invoice audit details */
+.sl-deposit-note { color: var(--muted); font-size: 10px; }
+.cust-opening-section { margin-top: 14px; padding: 14px; border: 1px solid var(--line, #dedee8); border-radius: 12px; background: #fafafd; }
+.cust-opening-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.cust-opening-heading > div { display: flex; flex-direction: column; gap: 3px; }
+.cust-opening-heading small { color: var(--muted); font-size: 11px; }
+.cust-opening-row { display: grid; grid-template-columns: minmax(130px, 1.3fr) minmax(130px, 1.2fr) 80px minmax(90px, .8fr) auto; gap: 8px; align-items: end; padding: 9px 0; border-top: 1px solid #e6e6ee; }
+.cust-opening-row .field { min-width: 0; margin: 0; }
+.cust-opening-row .field > span { font-size: 10px; }
+.cust-opening-row input, .cust-opening-row select { min-width: 0; width: 100%; }
+.cust-opening-remove { height: 38px; padding: 0 9px; }
+.sn-supplier-choice { display: grid; grid-template-columns: 1fr minmax(150px, 220px); align-items: center; gap: 10px; margin: 8px 0; padding: 8px 10px; border-radius: 8px; background: #f7f7fb; font-size: 11px; }
+.sn-supplier-choice span { color: var(--muted); }
+.sn-gst-readonly { font-weight: 600; color: #44546a; }
+.rc-void { flex-wrap: wrap; }
+.rc-void span { flex-basis: 100%; font-size: 11px; font-weight: 500; }
+.rc-invoice-bottom { align-items: start; }
+.rc-tax-groups { margin-top: 10px; overflow-x: auto; }
+.rc-tax-groups table { width: 100%; border-collapse: collapse; font-size: 9px; }
+.rc-tax-groups th, .rc-tax-groups td { padding: 5px 6px; text-align: right; border-bottom: 1px solid #e8e8ee; white-space: nowrap; }
+.rc-tax-groups th:first-child, .rc-tax-groups td:first-child { text-align: left; }
+.rc-deposit-box { margin: 12px 0; padding: 12px 14px; border: 1px solid #d9dce4; border-radius: 10px; background: #fafbfd; font-size: 10px; }
+.rc-deposit-box > b { display: block; margin-bottom: 7px; }
+.rc-deposit-box > div > div { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; border-top: 1px solid #e7e8ed; }
+.rc-deposit-box span { display: flex; flex-direction: column; gap: 2px; }
+.rc-deposit-box small { color: var(--muted); }
+.rc-cancel-refund { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 5px 12px; margin: 12px 0; padding: 11px 12px; border: 1px solid #e2e2eb; border-radius: 9px; background: #fafafd; }
+.rc-cancel-refund b { font-size: 16px; }
+.rc-cancel-refund small { flex-basis: 100%; color: var(--muted); }
+@media (max-width: 700px) {
+  .cust-opening-row { grid-template-columns: 1fr 1fr; }
+  .cust-opening-row .field:first-child, .cust-opening-row .field:nth-child(2) { grid-column: span 2; }
+  .cust-opening-remove { justify-self: start; }
+  .sn-supplier-choice { grid-template-columns: 1fr; }
+  .rc-invoice-footer { grid-template-columns: 1fr; }
+}
+
+.rc-tax-summary .rc-tax-groups { display: block; }

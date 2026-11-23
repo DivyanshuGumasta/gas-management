@@ -1,4 +1,4 @@
-// Sales list: period chips, search, three summary cards and one row per bill.
+// Sales list: period chips, search, four summary cards and invoice rows.
 (function () {
   const $ = (id) => document.getElementById(id);
   const { esc, fmt } = UI;
@@ -22,7 +22,9 @@
     return '<a class="row sl-row' + (s.status === "cancelled" ? " is-cancelled" : "") + '" href="/sales/' + s.id + '">' +
       '<span class="avatar">' + esc(fmt.initials(s.customer)) + "</span>" +
       '<span class="row-name"><b>' + esc(s.customer) + "</b><small>" + esc(s.number) + " · " + esc(when) + " · " + esc(s.label) + "</small></span>" +
-      '<span class="sl-amt"><b class="strike">' + esc(fmt.money(s.total)) + "</b>" + due + '<span class="badge ' + cls + '">' + text + "</span></span></a>";
+      '<span class="sl-amt"><b>' + esc(fmt.money(s.sales_value == null ? s.total : s.sales_value)) + "</b>" +
+      (Number(s.deposit_received || 0) || Number(s.deposit_refunded || 0) ? '<small class="sl-deposit-note">Deposit net ' + esc(fmt.money(Number(s.deposit_received || 0) - Number(s.deposit_refunded || 0))) + '</small>' : '') +
+      due + '<span class="badge ' + cls + '">' + text + "</span></span></a>";
   }
 
   async function load() {
@@ -38,6 +40,7 @@
       $("sl-bills").textContent = r.summary.bills + (r.summary.bills === 1 ? " bill" : " bills");
       $("sl-cyl").textContent = r.summary.cylinders;
       $("sl-udhaar").textContent = fmt.money(r.summary.udhaar);
+      $("sl-deposits").textContent = fmt.money(r.summary.deposits_held_change == null ? 0 : r.summary.deposits_held_change);
       $("sl-list").innerHTML = r.sales.length ? r.sales.map(row).join("")
         : '<div class="state"><b>No sales found</b><span>Nothing in this period yet.</span><button class="btn btn-orange" type="button" data-go-new>New sale</button></div>';
     } catch (e) {
@@ -66,7 +69,12 @@
     $("sl-view-history").hidden = isNew;
     $("sl-view-new").hidden = !isNew;
     $("sl-head-actions").hidden = isNew;                 // Export belongs to the history tab
-    if (remember) history.replaceState(null, "", isNew ? "/sales?tab=new" : "/sales");
+    if (remember) {
+      const params = new URLSearchParams(location.search);
+      if (isNew) params.set("tab", "new"); else params.delete("tab");
+      const query = params.toString();
+      history.replaceState(null, "", "/sales" + (query ? "?" + query : ""));
+    }
     if (isNew && !newOpened) { newOpened = true; window.SalesNew.open(); }
     if (!isNew) load();
   }

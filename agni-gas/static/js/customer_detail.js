@@ -3,7 +3,7 @@
   const { fmt, esc } = UI;
   const $ = (id) => document.getElementById(id);
   const id = Number(location.pathname.split("/").filter(Boolean).pop());
-  let c = null, ledger = null, cyl = null, prices = null, tab = "ledger";
+  let c = null, ledger = null, cyl = null, prices = null, holdings = [], tab = "ledger";
 
   const moneyCell = (v) => (v == null ? "" : esc(fmt.money(v)));
   function balCell(raw) {                       // + owes us (red) / - paid extra (green)
@@ -51,17 +51,19 @@
   }
 
   function cylindersHtml() {
-    const held = cyl.held.map((h) => '<div class="held">' + h.qty + " × " + esc(h.name) + "<small>with customer</small></div>").join("");
+    const held = holdings.map((h) => '<div class="held"><b>' + h.qty + " × " + esc(h.name) + '</b><small>' +
+      (h.supplier_name ? 'Supplier: ' + esc(h.supplier_name) : 'Supplier not assigned') + ' · Deposit held: ' + esc(fmt.money(h.deposit_total)) + '</small></div>').join("");
     const hist = cyl.history.length ? '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Date</th><th>Detail</th><th>Size</th>' +
       '<th class="num">Change</th></tr></thead><tbody>' + cyl.history.map((h) =>
         "<tr><td>" + esc(Cust.date(h.date)) + "</td><td>" + esc(h.detail) + (h.note ? '<span class="sub">' + esc(h.note) + "</span>" : "") +
         "</td><td>" + esc(h.type) + '</td><td class="num ' + (h.delta > 0 ? "text-red" : "text-green") + '">' +
         (h.delta > 0 ? "+" : "") + h.delta + "</td></tr>").join("") + "</tbody></table></div>" : "";
     return '<div class="panel-pad">' +
-      (cyl.total > 0
-        ? "<h3>Cylinders with this customer</h3><div class=\"held-grid\">" + held + "</div>" +
-          '<button class="btn btn-dark" id="cd-return2" type="button">Return empties</button>'
-        : '<div class="hint-text" style="margin:0">No cylinders with this customer.</div>') +
+      (holdings.length
+        ? "<h3>Cylinders with this customer</h3><div class=\"held-grid\">" + held + "</div>"
+        : '<div class="hint-text" style="margin:0">No cylinders currently recorded with this customer.</div>') +
+      '<button class="btn btn-white" id="cd-add-openings" type="button">Add opening cylinders</button>' +
+      (cyl.total > 0 ? '<button class="btn btn-dark" id="cd-return2" type="button">Record return in New Sale</button>' : '') +
       "</div>" + hist;
   }
 
@@ -87,9 +89,10 @@
   async function load() {
     $("cd-error").hidden = true;
     try {
-      [c, ledger, cyl, prices] = await Promise.all([
+      [c, ledger, cyl, prices, holdings] = await Promise.all([
         Api.get("/api/customers/" + id), Api.get("/api/customers/" + id + "/ledger"),
         Api.get("/api/customers/" + id + "/cylinders"), Api.get("/api/customers/" + id + "/prices"),
+        Api.get("/api/customers/" + id + "/holdings"),
       ]);
     } catch (e) {
       if (e.status === 404) { $("cd-main").hidden = true; $("cd-missing").hidden = false; return; }
@@ -105,13 +108,14 @@
 
   /* ---------- actions ---------- */
   function returnEmpties() {
-    window.location.href = "/sales?tab=new&customer=" + c.id;
+    window.location.href = "/sales?tab=new&customer=" + c.id + "&return=1";
   }
 
   document.querySelector(".detail-grid").addEventListener("click", (e) => {
     const t = e.target.closest("[data-tab]");
     if (t) { tab = t.dataset.tab; renderTab(); }
     if (e.target.closest("#cd-return2")) returnEmpties();
+    if (e.target.closest("#cd-add-openings")) Cust.openOpeningCylinders({ customerId: c.id, customerName: c.name, onSaved: load });
   });
   $("cd-retry").addEventListener("click", load);
   $("cd-receive").addEventListener("click", () => Cust.openReceive({ customer: c, onSaved: load }));

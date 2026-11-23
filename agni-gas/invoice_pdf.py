@@ -13,6 +13,7 @@ from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from money import amount_in_words
 
 
 NAVY = colors.HexColor("#20364F")
@@ -70,39 +71,6 @@ def _money(value):
 
 def _safe(value):
     return escape(str(value if value is not None else "")).replace("\n", "<br/>")
-
-
-def _amount_words(value):
-    ones = ["Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine",
-            "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen",
-            "Seventeen", "Eighteen", "Nineteen"]
-    tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"]
-
-    def under_hundred(number):
-        return ones[number] if number < 20 else tens[number // 10] + (" " + ones[number % 10] if number % 10 else "")
-
-    def words(number):
-        number = int(number)
-        if number < 100:
-            return under_hundred(number)
-        parts = []
-        for divisor, label in ((10000000, "Crore"), (100000, "Lakh"), (1000, "Thousand")):
-            if number >= divisor:
-                parts.append(words(number // divisor) + " " + label)
-                number %= divisor
-        if number >= 100:
-            parts.append(ones[number // 100] + " Hundred")
-            number %= 100
-        if number:
-            parts.append(under_hundred(number))
-        return " ".join(parts)
-
-    paise = int((_decimal(value).copy_abs() * 100).quantize(Decimal("1")))
-    rupees, cents = divmod(paise, 100)
-    result = "Rupees " + words(rupees)
-    if cents:
-        result += " and " + words(cents) + " Paise"
-    return result + " Only"
 
 
 def _styles():
@@ -190,8 +158,10 @@ def build_invoice_pdf(invoice):
         agency_lines.append(_p(" | ".join(contacts), styles["small"]))
     if business.get("gstin"):
         agency_lines.append(_p("GSTIN: " + business["gstin"], styles["body"]))
+    if business.get("pan"):
+        agency_lines.append(_p("PAN: " + business["pan"], styles["small"]))
 
-    doc_title = "TAX INVOICE" if business.get("gstin") else "INVOICE"
+    doc_title = invoice.get("title") or ("TAX INVOICE" if business.get("gstin") else "INVOICE")
     if cancelled:
         doc_title += "<br/>CANCELLED"
     header_right = Paragraph(doc_title, styles["cancel"] if cancelled else styles["title"])
@@ -205,11 +175,28 @@ def build_invoice_pdf(invoice):
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
     ]))
     story.extend([header, Spacer(1, 7)])
+    if cancelled:
+        cancellation = "CANCELLED"
+        if invoice.get("cancelled_at_label"):
+            cancellation += " · " + str(invoice["cancelled_at_label"])
+        if invoice.get("cancel_reason"):
+            cancellation += " · Reason: " + str(invoice["cancel_reason"])
+        cancel_box = Table([[_p(cancellation, styles["cancel"])]], colWidths=[width])
+        cancel_box.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#FCEEEE")),
+            ("BOX", (0, 0), (-1, -1), 0.8, RED),
+            ("LEFTPADDING", (0, 0), (-1, -1), 7),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+            ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ]))
+        story.extend([cancel_box, Spacer(1, 7)])
 
     meta_items = [
         ("Invoice number", invoice.get("number")),
         ("Invoice date", invoice.get("date")),
-        ("Place of supply", invoice.get("place_state_code") or "—"),
+        ("Place of supply", " · ".join(x for x in (str(invoice.get("place_state_code") or "").strip(),
+                                                        str(invoice.get("place_state_name") or "").strip()) if x) or "—"),
         ("Reverse charge", "Yes" if invoice.get("reverse_charge") else "No"),
     ]
     meta = Table([
@@ -238,6 +225,9 @@ def build_invoice_pdf(invoice):
         bill_lines.append(_p("GSTIN: " + customer["gstin"], styles["body"]))
     else:
         bill_lines.append(_p("Unregistered customer", styles["small"]))
+    if customer.get("state_code"):
+        bill_lines.append(_p("State: " + str(customer.get("state_code")) +
+                             (" · " + str(invoice.get("customer_state_name")) if invoice.get("customer_state_name") else ""), styles["small"]))
     bill = Table([[bill_lines]], colWidths=[width])
     bill.setStyle(TableStyle([
         ("BOX", (0, 0), (-1, -1), 0.45, GRID),
@@ -257,7 +247,7 @@ def build_invoice_pdf(invoice):
         if line.get("detail"):
             name += "<br/><font color='#5D6976' size='6'>" + _safe(line["detail"]) + "</font>"
         kind = line.get("kind")
-        informational = kind in ("empty_in", "deposit_forfeit")
+        informational = kind in ("empty_in", "deposit_forfeit", "deposit_retained")
         amount = _decimal(line.get("amount"))
         tax = _decimal(line.get("cgst")) + _decimal(line.get("sgst")) + _decimal(line.get("igst"))
         rate = "—" if informational else _money(line.get("rate"))
@@ -287,6 +277,12 @@ def build_invoice_pdf(invoice):
         tax_components = [("GST", "0.00")]
     for label, value in tax_components:
         tax_rows.append([_p(label, styles["table"]), _p(_money(value), numeric_style)])
+    if invoice.get("grouped_lines"):
+        tax_rows.append([_p("HSN / GST breakdown", styles["table_bold"]), _p("", styles["table"])])
+        for group in invoice.get("grouped_lines") or []:
+            label = str(group.get("hsn") or "—") + " / " + (str(group.get("gst_rate")) + "%" if group.get("gst_rate") is not None else "—")
+            value = _money(group.get("taxable"))
+            tax_rows.append([_p(label, styles["tiny"]), _p(value, numeric_style)])
     tax_table = Table(tax_rows, colWidths=[95, 82], hAlign="LEFT")
     tax_table.setStyle(_table_style(regular, bold, header=True))
 
@@ -298,6 +294,7 @@ def build_invoice_pdf(invoice):
         ("Total GST", invoice.get("gst"), False),
         ("Refundable security received", invoice.get("deposit_received"), False),
         ("Security deposit refunded", invoice.get("deposit_refunded"), True),
+        ("Customer deposit retained", invoice.get("retained_deposits"), False),
     ]:
         if label not in ("Product subtotal", "Taxable value", "Total GST") and _decimal(value) == 0:
             continue
@@ -305,7 +302,7 @@ def build_invoice_pdf(invoice):
     total_value = _decimal(invoice.get("total"))
     total_rows.append([_p("Amount to pay back" if total_value < 0 else "Invoice total", styles["table_bold"]),
                        _p(_money(abs(total_value)), numeric_style)])
-    total_rows.append([_p("Amount received / paid back", styles["table"]),
+    total_rows.append([_p(invoice.get("paid_label") or "Amount received / paid back", styles["table"]),
                        _p(_money(abs(_decimal(invoice.get("paid")))), numeric_style)])
     if _decimal(invoice.get("due")) > 0 and not cancelled:
         total_rows.append([_p("Balance due", styles["table_bold"]), _p(_money(invoice.get("due")), numeric_style)])
@@ -329,8 +326,40 @@ def build_invoice_pdf(invoice):
     ]))
     story.append(bottom)
 
+    deposit_lines = [line for line in (invoice.get("lines") or [])
+                     if line.get("kind") in ("deposit", "deposit_refund", "deposit_forfeit", "deposit_retained", "empty_in")]
+    if deposit_lines or _decimal(invoice.get("retained_deposits")) != 0:
+        story.extend([Spacer(1, 8), _p("CYLINDER DEPOSITS & RETURNS", styles["section"])])
+        deposit_rows = [[_p("Description", styles["table_head"]), _p("Qty", styles["table_head"]),
+                         _p("Amount / retained", styles["table_head"])]]
+        for line in deposit_lines:
+            detail = str(line.get("name") or "")
+            if line.get("detail"):
+                detail += " - " + str(line["detail"])
+            kind = line.get("kind")
+            retained = _decimal(line.get("retained"))
+            amount = _decimal(line.get("amount"))
+            if kind == "deposit":
+                value = "+ " + _money(amount)
+            elif kind == "deposit_refund":
+                retained_text = (" / " + _money(retained) + " retained") if retained else ""
+                value = "- " + _money(abs(amount)) + retained_text
+            elif retained:
+                value = _money(retained) + " retained"
+            else:
+                value = "—"
+            deposit_rows.append([_p(detail, styles["table"]), _p(line.get("qty") or "", styles["table"]),
+                                 _p(value, numeric_style)])
+        deposit_table = Table(deposit_rows, colWidths=[width * 0.68, width * 0.10, width * 0.22],
+                              repeatRows=1, hAlign="LEFT")
+        deposit_table.setStyle(_table_style(regular, bold, header=True))
+        story.append(deposit_table)
+
+    amount_words = invoice.get("amount_in_words")
+    if not amount_words:
+        amount_words = amount_in_words(int((_decimal(total_value) * 100).quantize(Decimal("1"))))
     word_label = "Refund payable in words: " if total_value < 0 else "Amount in words: "
-    story.extend([Spacer(1, 7), _p(word_label + _amount_words(total_value), styles["small"])])
+    story.extend([Spacer(1, 7), _p(word_label + str(amount_words).removeprefix("Minus "), styles["small"])])
     if invoice.get("note"):
         story.extend([Spacer(1, 5), _p("Note: " + invoice["note"], styles["small"])])
 

@@ -25,38 +25,56 @@ def add_lot(db, cylinder_type_id, qty, unit_cost_paise, lot_date, purchase_id=No
     ).lastrowid
 
 
-def consume_fifo(db, cylinder_type_id, qty, ref_type, ref_id):
-    """Take `qty` full cylinders out of the oldest lots. Returns the total cost in paise.
+def consume_fifo(db, cylinder_type_id, qty, ref_type, ref_id, supplier_id=None):
+    """Take full cylinders FIFO, preferring one supplier when requested.
 
-    If the lots run short (stock that was never recorded as a lot) the missing cylinders
-    are costed at the cylinder's latest purchase price and saved with no lot, so the
-    sale still has a cost and nothing breaks.
+    Any shortfall follows the original all-lots FIFO order. Untracked stock is
+    still costed at the cylinder's current purchase price and stored as a
+    no-lot consumption so historical sale cost remains stable.
     """
     remaining, total = qty, 0
     if remaining <= 0:
         return 0
-    lots = db.execute(
-        "SELECT id, qty_left, unit_cost_paise FROM stock_lots WHERE cylinder_type_id=? AND qty_left>0 ORDER BY " + _ORDER,
-        (cylinder_type_id,),
-    ).fetchall()
-    for lot in lots:
-        if remaining <= 0:
-            break
-        take = min(remaining, lot["qty_left"])
-        db.execute("UPDATE stock_lots SET qty_left = qty_left - ? WHERE id=?", (take, lot["id"]))
-        db.execute(
-            "INSERT INTO lot_consumptions (lot_id, cylinder_type_id, ref_type, ref_id, qty, unit_cost_paise)"
-            " VALUES (?,?,?,?,?,?)",
-            (lot["id"], cylinder_type_id, ref_type, ref_id, take, lot["unit_cost_paise"]),
-        )
-        total += take * lot["unit_cost_paise"]
-        remaining -= take
+
+    def take_from(rows):
+        nonlocal remaining, total
+        for lot in rows:
+            if remaining <= 0:
+                break
+            take = min(remaining, lot["qty_left"])
+            db.execute("UPDATE stock_lots SET qty_left=qty_left-? WHERE id=?", (take, lot["id"]))
+            db.execute(
+                "INSERT INTO lot_consumptions (lot_id,cylinder_type_id,ref_type,ref_id,qty,unit_cost_paise) "
+                "VALUES (?,?,?,?,?,?)",
+                (lot["id"], cylinder_type_id, ref_type, ref_id, take, lot["unit_cost_paise"]),
+            )
+            total += take * lot["unit_cost_paise"]
+            remaining -= take
+
+    if supplier_id is not None:
+        preferred = db.execute(
+            "SELECT id,qty_left,unit_cost_paise FROM stock_lots "
+            "WHERE cylinder_type_id=? AND supplier_id=? AND qty_left>0 ORDER BY " + _ORDER,
+            (cylinder_type_id, supplier_id),
+        ).fetchall()
+        take_from(preferred)
+
     if remaining > 0:
-        row = db.execute("SELECT purchase_price_paise FROM cylinder_types WHERE id=?", (cylinder_type_id,)).fetchone()
+        all_lots = db.execute(
+            "SELECT id,qty_left,unit_cost_paise FROM stock_lots "
+            "WHERE cylinder_type_id=? AND qty_left>0 ORDER BY " + _ORDER,
+            (cylinder_type_id,),
+        ).fetchall()
+        take_from(all_lots)
+
+    if remaining > 0:
+        row = db.execute(
+            "SELECT purchase_price_paise FROM cylinder_types WHERE id=?", (cylinder_type_id,)
+        ).fetchone()
         cost = row["purchase_price_paise"] if row else 0
         db.execute(
-            "INSERT INTO lot_consumptions (lot_id, cylinder_type_id, ref_type, ref_id, qty, unit_cost_paise)"
-            " VALUES (NULL,?,?,?,?,?)",
+            "INSERT INTO lot_consumptions (lot_id,cylinder_type_id,ref_type,ref_id,qty,unit_cost_paise) "
+            "VALUES (NULL,?,?,?,?,?)",
             (cylinder_type_id, ref_type, ref_id, remaining, cost),
         )
         total += remaining * cost

@@ -1,12 +1,20 @@
 """Agency invoice details stored in the existing settings table."""
+import re
+
 from flask import jsonify
 
 from db import get_db, transaction
 from . import api_bp
 from .util import STATES, ApiError, body, gstin_field, state_code_field, text
 
+
+@api_bp.get("/states")
+def states_list():
+    return jsonify([{"code": code, "name": name} for code, name in
+                    sorted(STATES.items(), key=lambda item: (item[1].casefold(), item[0]))])
+
 FIELDS = (
-    "name", "address", "gstin", "state_code", "phone", "email",
+    "name", "address", "gstin", "pan", "state_code", "phone", "email",
     "bank_name", "bank_account", "bank_ifsc", "terms", "invoice_prefix",
 )
 PREFIX = "business."
@@ -43,6 +51,7 @@ def business_save():
         "name": text(data, "name", "Agency name", required=True, max_len=120),
         "address": text(data, "address", "Agency address", required=True, max_len=300),
         "gstin": gstin_field(data, required=False),
+        "pan": (text(data, "pan", "PAN", max_len=10) or "").upper(),
         "state_code": state_code_field(data, required=True),
         "phone": text(data, "phone", "Phone", max_len=30),
         "email": text(data, "email", "Email", max_len=120),
@@ -54,6 +63,10 @@ def business_save():
     }
     if values["gstin"] and values["gstin"][:2] != values["state_code"]:
         raise ApiError("Agency state must match the first two digits of its GSTIN.", field="state_code")
+    if values["pan"] and not re.fullmatch(r"[A-Z]{5}[0-9]{4}[A-Z]", values["pan"]):
+        raise ApiError("Enter a valid 10-character PAN.", field="pan")
+    if values["gstin"] and values["pan"] and values["gstin"][2:12] != values["pan"]:
+        raise ApiError("PAN must match the PAN embedded in the agency GSTIN.", field="pan")
     if not values["invoice_prefix"].isalnum():
         raise ApiError("Invoice prefix can contain letters and numbers only.", field="invoice_prefix")
     db = get_db()

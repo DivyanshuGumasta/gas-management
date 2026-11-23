@@ -1,48 +1,66 @@
-# Sales API contract (v0.5 frontend)
+# Sales API contract (v0.6.2)
 
-The screens already call these URLs. `api/mock_sales.py` is a temporary in-memory copy; the real backend replaces it
-with the same JSON. Money is a string `"1450.50"` in rupees. Dates are `YYYY-MM-DD`.
+All endpoints are under `/api`. Money values are strings in rupees with two decimals. Database money is stored as integer paise. Sales are persistent SQLite records; the old in-memory mock is retired.
 
-## GET /api/sales?from=&to=&q=
-`from`/`to` optional (the page sends them for Today / Last 7 days / This month / Custom; none for All). `q` matches bill number or customer name.
-```json
-{ "summary": { "total": "7000.00", "bills": 2, "cylinders": 3, "udhaar": "2900.00" },
-  "sales": [ { "id": 5, "number": "S-00005", "date": "2026-11-23", "time": "10:23 AM", "customer": "tiku",
-               "customer_id": 4, "label": "1 x 15 kg", "cylinders": 1, "total": "4100.00", "due": "0.00",
-               "status": "paid" } ] }
-```
-`status`: `paid` | `partial` | `udhaar` | `cancelled`. Newest first. `summary` ignores cancelled bills. `cylinders` = full cylinders sold (refill + new full).
-`customer` is `"Walk-in customer"` and `customer_id` null for walk-ins.
+## GET /sales
 
-## GET /api/sales/<id>
-```json
-{ "id": 5, "number": "S-00005", "date": "2026-11-23", "time": "10:23 AM", "status": "paid",
-  "customer": { "id": 4, "name": "tiku", "phone": "98765 43210" },     // null for walk-in
-  "note": null,
-  "lines": [ { "kind": "refill", "name": "15 kg", "qty": 1, "rate": "4100.00", "amount": "4100.00", "detail": "Refill" } ],
-  "subtotal": "4100.00", "discount": "0.00", "gst_percent": 0, "gst": "0.00", "total": "4100.00",
-  "paid": "4100.00", "due": "0.00", "received_in": "cash" }
-```
-Line `kind`: `refill` (rate = price) · `new_full` (rate = price + security) · `new_empty` (rate = security) · `empty_in` (free, amount 0) · `item` (other items; `detail` = unit).
+Optional query parameters: `from`, `to`, `q`.
 
-## POST /api/sales  → 201 `{ "id": 5, "number": "S-00005" }`
-```json
-{ "customer_id": 4,                      // null = walk-in (cash only)
-  "date": "2026-11-23",
-  "lines": [ { "cylinder_type_id": 3, "refill": 1, "new_full": 0, "new_empty": 0, "empty_in": 1,
-               "rate": "4100.00", "security": "6000.00" } ],   // only sizes that have a quantity; rate is editable per sale
-  "items": [ { "item_id": 2, "qty": "2", "rate": "350.00" } ],
-  "discount": "50", "gst_percent": "5",
-  "payment": "paid",                      // paid | partial | credit (udhaar). partial/credit need a customer
-  "received_in": "cash",                  // cash | bank
-  "paid": "1000",                         // only used for partial; paid = total, credit = 0
-  "note": "" }
-```
-Errors: `{ "error": "...", "field": "..." }` (400/404/409) e.g. not enough full cylinders, walk-in with udhaar.
+Returns:
 
-## POST /api/sales/<id>/cancel  → `{ "ok": true }`
-Marks the bill cancelled; stock goes back (to the same lots), udhaar removed, the record is kept. 409 if already cancelled.
+- `summary.total`: taxable value + GST across all matching active bills; excludes refundable deposits.
+- `summary.bills`: matching active bill count.
+- `summary.cylinders`: full cylinders sold (refill + new full).
+- `summary.deposits_held_change`: deposits received minus deposits refunded on matching active bills.
+- `summary.udhaar`: outstanding amount on matching active bills.
+- `sales`: newest 500 matching bills. Each row includes `id`, `number`, `date`, 12-hour `time`, `customer`, `customer_id`, `label`, `cylinders`, `total` (actual invoice total including deposits), `sales_value` (taxable + GST), `due`, and `status`.
+- `truncated`: true when more than 500 rows match. The summary is still calculated over all matching bills.
 
-## Real backend must also (not in the mock)
-Take full cylinders out of the oldest lots and store the cost; empties-in/refills change empty stock; customer cylinders held;
-udhaar into the customer ledger; payment into cash/bank; items stock down; numbers `S-00001…` from `next_number`.
+## GET /sales/<id>
+
+Returns the saved invoice snapshot: `id`, `number`, `date`, 12-hour `time`, `status`, `customer`, `business`, `legacy`, `place_state_code`, `reverse_charge` (always false), `note`, `lines`, `subtotal`, `discount`, `taxable`, `cgst`, `sgst`, `igst`, `gst`, `gst_percent`, `deposit_received`, `deposit_refunded`, `total`, `paid`, `due`, `received_in`, `cancel_reason`, and `cancelled_at`.
+
+Each line includes `kind`, `action`, `name`, `hsn`, `qty`, `unit`, `rate`, `amount`, `taxable`, `gst_rate` (string or null), `cgst`, `sgst`, `igst`, `detail`, and `supplier_id`.
+
+Legacy bills without `sale_lines` are returned with `legacy: true`, a live customer name/phone fallback, `business: {}`, and their original `sale_items` represented as product lines.
+
+## POST /sales
+
+Creates an invoice and applies stock, customer cylinder-ledger, customer-deposit, supplier-empty, supplier-deposit and catalogue-stock movements in one transaction.
+
+Body fields: `customer_id`, `date`, `place_state_code`, `lines`, `items`, `discount`, `payment` (`paid`, `partial`, `credit`), `received_in` (`cash`, `bank`), `paid`, and `note`.
+
+Each cylinder `lines[]` row contains `cylinder_type_id`, `refill`, `new_full`, `new_empty`, `empty_in`, `damaged_in`, `rate`, `security`, optional `supplier_id` (stock source), optional `return_supplier_id` (good/damaged return owner), `deposit_back`, and optional `deposit_each`.
+
+The old bill-level `damaged_supplier_id` is accepted as a fallback for `return_supplier_id` on damaged-return rows. Browser-sent `gst_rate`, `hsn`, and `reverse_charge` values are ignored. HSN and GST rate come from Stock & Price. Reverse charge is always false.
+
+If exactly one active supplier exists it is selected automatically. With multiple active suppliers, stock movements require an explicit supplier. A return can infer its supplier when the customer's holdings for that size identify exactly one supplier; otherwise the API returns 422 asking for `return_supplier_id`. A selected supplier must be linked to the cylinder size in Stock & Price.
+
+A refill by itself does not require or reduce customer-held cylinders. `empty_in` and `damaged_in` must not exceed the customer's held count. When a single cylinder row combines a refill with a separate return action, the combined counts cannot reuse the same tracked cylinder. Customer deposits are separate from supplier deposits.
+
+Returns `201` with `{ "id": 12, "number": "S-00012" }`.
+
+## POST /sales/<id>/cancel
+
+Body: `{ "reason": "optional reason up to 200 characters" }`.
+
+Cancels paid and unpaid invoices when stock safety allows. A bill with damaged cylinders already dispatched to a supplier cannot be cancelled. A reversal that would make stock or customer-held cylinders negative is rejected. The invoice remains in history with the same number and status `cancelled`; `paid_paise` is preserved.
+
+Returns `{ "ok": true, "refund": "1450.00" }`. The refund is the positive amount previously received, and it must be handed back using the original `received_in` method. A payout invoice whose `paid` value is negative returns `0.00`.
+
+## GET /sales/<id>/pdf
+
+Returns a downloadable `application/pdf` generated from the saved invoice snapshot. Legacy bills are supported.
+
+## Customer cylinder endpoints
+
+- `GET /customers/<id>/held-cylinders`: existing simple `{ "<cylinder_type_id>": qty }` response; retained for compatibility.
+- `GET /customers/<id>/holdings`: list of supplier-specific holdings, each with `cylinder_type_id`, `name`, `supplier_id`, `supplier_name`, `qty`, `deposit_each`, and `deposit_total`. Legacy ledger-only cylinders appear as an unassigned zero-deposit entry.
+- `POST /customers` may include `held: [{"cylinder_type_id":1,"qty":2,"supplier_id":3,"deposit_each":"2500.00"}]`. Omitting `supplier_id` uses the sole active supplier when exactly one exists; explicit null means unassigned.
+- `POST /customers/<id>/opening-cylinders` accepts the same `held` list and returns the updated holdings.
+- `PUT /customers/<id>` ignores `held`; editing a customer never changes cylinder history.
+- `POST /customers/<id>/return-empties` is retired and returns 410. Record returns through Sales → New sale so the deposits remain correct.
+
+## GET /states
+
+Returns the existing Indian state/territory codes and names sorted by name: `[{"code":"22","name":"Chhattisgarh"}, ...]`.

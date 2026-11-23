@@ -14,7 +14,7 @@ from db import (get_db, transaction, link_new_cylinder_to_sole_supplier,
                 link_new_item_to_sole_supplier)
 from money import to_rupees
 from . import api_bp
-from .util import (ApiError, body, gst_rate_bp_field, hsn_field, int_field,
+from .util import (ApiError, body, gst_rate_bp_field, gst_rate_text, hsn_field, int_field,
                    money_field, quantity_from_milli, quantity_milli_field, text)
 
 LOW_CYLINDERS = 5     # a size is "LOW" when it has this many full cylinders or fewer
@@ -82,7 +82,7 @@ def _cylinder_dict(r, lot_value, lot_qty, suppliers):
     covered = lot_value + max(0, r["full_qty"] - lot_qty) * r["purchase_price_paise"]   # stock the lots do not cover
     return {
         "id": r["id"], "name": r["name"], "kg": r["kg"], "hsn": r["hsn"],
-        "gst_rate": None if r["gst_rate_bp"] is None else str(r["gst_rate_bp"] / 100),
+        "gst_rate": gst_rate_text(r["gst_rate_bp"]),
         "full": r["full_qty"], "empty": r["empty_qty"], "damaged": r["damaged_qty"],
         "with_customers": r["with_customers_qty"],
         "sale_price": to_rupees(r["sale_price_paise"]), "wholesale_price": to_rupees(r["wholesale_price_paise"]),
@@ -98,7 +98,7 @@ def _item_dict(r, suppliers):
     value = (r["stock_qty_milli"] * r["purchase_price_paise"] + 500) // 1000
     return {
         "id": r["id"], "name": r["name"], "unit": r["unit"], "qty": quantity_from_milli(r["stock_qty_milli"]),
-        "hsn": r["hsn"], "gst_rate": None if r["gst_rate_bp"] is None else str(r["gst_rate_bp"] / 100),
+        "hsn": r["hsn"], "gst_rate": gst_rate_text(r["gst_rate_bp"]),
         "sale_price": to_rupees(r["sale_price_paise"]), "wholesale_price": to_rupees(r["wholesale_price_paise"]),
         "purchase_price": to_rupees(r["purchase_price_paise"]),
         "low": r["stock_qty_milli"] <= LOW_ITEM_MILLI,

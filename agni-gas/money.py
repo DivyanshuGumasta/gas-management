@@ -49,3 +49,33 @@ def format_inr(paise) -> str:
             groups.insert(0, head)
         s = ",".join(groups + [tail])
     return f"{sign}Rs {s}" + (f".{ps:02d}" if ps else "")
+
+
+def amount_in_words(paise) -> str:
+    """Format integer paise as Indian currency words (Rupees/Lakh/Crore)."""
+    p = int(paise or 0)
+    sign = "Minus " if p < 0 else ""
+    p = abs(p)
+    ones = ["Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine",
+            "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen",
+            "Seventeen", "Eighteen", "Nineteen"]
+    tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"]
+    def under100(n):
+        return ones[n] if n < 20 else tens[n // 10] + (" " + ones[n % 10] if n % 10 else "")
+    def words(n):
+        n = int(n)
+        if n < 100: return under100(n)
+        parts = []
+        for divisor, label in ((10000000, "Crore"), (100000, "Lakh"), (1000, "Thousand")):
+            if n >= divisor:
+                parts.append(words(n // divisor) + " " + label)
+                n %= divisor
+        if n >= 100:
+            parts.append(ones[n // 100] + " Hundred")
+            n %= 100
+        if n: parts.append(under100(n))
+        return " ".join(parts)
+    rupees, cents = divmod(p, 100)
+    result = sign + "Rupees " + words(rupees)
+    if cents: result += " and " + words(cents) + " Paise"
+    return result + " Only"

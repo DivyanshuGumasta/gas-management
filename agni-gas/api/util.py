@@ -169,3 +169,10 @@ def gstin_field(data, key="gstin", required=False):
     if value[:2] not in STATES:
         raise ApiError("GSTIN contains an unknown state code.", field=key)
     return value
+
+def gst_rate_text(rate_bp):
+    """Format basis points as a compact GST percentage string (250 -> '2.5')."""
+    from decimal import Decimal
+    if rate_bp is None:
+        return None
+    return format((Decimal(int(rate_bp)) / Decimal(100)).normalize(), "f")

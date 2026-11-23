@@ -1,5 +1,5 @@
 // Shared pieces for the customer screens: toast, dates, balance tags, the export
-// menu, and the popups (Add/Edit customer, Receive payment, Return empties, Confirm).
+// menu, and the popups (Add/Edit customer, opening cylinders, Receive payment, Confirm).
 // Loaded by customers.html and customer_detail.html AFTER ui.js and api.js.
 window.Cust = (function () {
   const { fmt, esc } = UI;
@@ -94,6 +94,72 @@ window.Cust = (function () {
     if (ex) exportData(ex.dataset.export, (ex.closest("[data-scope]") || {}).dataset?.scope);
   });
 
+  /* ---------- reference options and opening customer cylinders ---------- */
+  let cachedStates = null;
+  async function stateOptions() {
+    if (!cachedStates) cachedStates = await Api.get("/api/states");
+    return cachedStates;
+  }
+  async function stockHoldOptions() {
+    const [stock, extra] = await Promise.all([Api.get("/api/stock"), Api.get("/api/stock/extra")]);
+    return { cylinders: stock.cylinders || [], extra };
+  }
+  function addOpeningRow(container, options) {
+    const cylinders = options.cylinders || [];
+    const row = document.createElement("div");
+    row.className = "cust-opening-row";
+    row.setAttribute("data-opening-row", "");
+    row.innerHTML =
+      '<label class="field"><span>Cylinder size</span><select class="select" data-opening-cylinder>' +
+      cylinders.map((c) => '<option value="' + c.id + '">' + esc(c.name) + '</option>').join("") + '</select></label>' +
+      '<label class="field"><span>Supplier</span><select class="select" data-opening-supplier></select></label>' +
+      '<label class="field"><span>Qty</span><input class="input" data-opening-qty inputmode="numeric" min="1" value="1"></label>' +
+      '<label class="field"><span>Deposit / cylinder</span><div class="amt"><i>Rs</i><input data-opening-deposit inputmode="decimal"></div></label>' +
+      '<button class="icon-btn" type="button" data-opening-remove aria-label="Remove opening cylinder row">×</button>';
+    const type = row.querySelector("[data-opening-cylinder]");
+    const supplier = row.querySelector("[data-opening-supplier]");
+    const deposit = row.querySelector("[data-opening-deposit]");
+    function refresh() {
+      const c = cylinders.find((x) => String(x.id) === type.value);
+      const typeExtra = ((options.extra.cylinders || {})[String(type.value)] || {});
+      const links = typeExtra.suppliers || [];
+      supplier.innerHTML = '<option value="">Unassigned / not sure</option>' + links.map((x) =>
+          '<option value="' + x.supplier_id + '">' + esc(x.name) + '</option>').join("");
+      if (links.length === 1) supplier.value = String(links[0].supplier_id);
+      deposit.value = c ? String((links.find((x) => String(x.supplier_id) === supplier.value) || {}).security || c.security || "0") : "0";
+    }
+    type.addEventListener("change", refresh);
+    supplier.addEventListener("change", () => {
+      const links = (((options.extra.cylinders || {})[String(type.value)] || {}).suppliers || []);
+      const selected = links.find((x) => String(x.supplier_id) === supplier.value);
+      const c = cylinders.find((x) => String(x.id) === type.value);
+      deposit.value = selected ? String(selected.security || c.security || "0") : String(c ? c.security || "0" : "0");
+    });
+    row.querySelector("[data-opening-remove]").addEventListener("click", () => row.remove());
+    refresh();
+    container.appendChild(row);
+    return row;
+  }
+  function openingPayload(container) {
+    return [...container.querySelectorAll("[data-opening-row]")].map((row) => ({
+      cylinder_type_id: Number(row.querySelector("[data-opening-cylinder]").value),
+      supplier_id: row.querySelector("[data-opening-supplier]").value || null,
+      qty: Number(row.querySelector("[data-opening-qty]").value) || 0,
+      deposit_each: row.querySelector("[data-opening-deposit]").value.trim(),
+    })).filter((x) => x.qty > 0);
+  }
+  async function populateStateSelect(select, selected) {
+    try {
+      const rows = await stateOptions();
+      select.innerHTML = '<option value="">Choose state</option>' + rows.map((r) =>
+        '<option value="' + esc(r.code) + '">' + esc(r.name) + ' (' + esc(r.code) + ')</option>').join("");
+      select.value = selected || "";
+    } catch (_) {
+      select.innerHTML = '<option value="">Could not load states</option>';
+      select.value = selected || "";
+    }
+  }
+
   /* ---------- Add / Edit customer ---------- */
   function openCustomerForm({ customer = null, onSaved }) {
     const edit = !!customer;
@@ -113,12 +179,13 @@ window.Cust = (function () {
       '<label class="field"><span>Address (optional)</span><input class="input" name="address" maxlength="200" autocomplete="off"></label>' +
       '<label class="field"><span>Billing address (optional)</span><input class="input" name="billing_address" maxlength="250" autocomplete="off"></label>' +
       '<div class="two"><label class="field"><span>GSTIN (optional)</span><input class="input" name="gstin" maxlength="15" autocapitalize="characters" autocomplete="off"></label>' +
-      '<label class="field"><span>GST state code (optional)</span><input class="input" name="state_code" maxlength="2" inputmode="numeric" placeholder="e.g. 22"></label></div>' +
+      '<label class="field"><span>State</span><select class="select" name="state_code"><option value="">Choose state</option></select></label></div>' +
       '<div class="field"><span>Previous balance (optional)</span><div class="balance-row">' +
       '<div class="seg" data-seg="otype"><button type="button" class="seg-btn" data-val="udhaar">Udhaar</button>' +
       '<button type="button" class="seg-btn" data-val="advance">Advance</button></div>' +
       '<div class="amt"><i>Rs</i><input name="opening_amount" inputmode="decimal" placeholder="0" autocomplete="off"></div></div>' +
       '<em class="err" data-err="opening_amount"></em><small class="hint" data-hint></small></div>' +
+      (!edit ? '<section class="cust-opening-section"><div class="cust-opening-heading"><div><b>Opening cylinders with customer</b><small>Record cylinders already held before the first sale</small></div><button class="btn btn-white" type="button" data-opening-add>Add row</button></div><div data-opening-rows></div></section>' : '') +
       '<label class="field"><span>Note (optional)</span><textarea class="textarea" name="note" maxlength="500"></textarea></label>' +
       '<div class="form-error" role="alert"></div>' +
       '<div class="modal-foot"><button type="button" class="btn btn-white" data-close>Cancel</button>' +
@@ -127,6 +194,20 @@ window.Cust = (function () {
 
     const form = body.querySelector("form");
     const q = (n) => form.elements[n];
+    populateStateSelect(q("state_code"), customer ? customer.state_code : "");
+    if (!edit) {
+      const rows = form.querySelector("[data-opening-rows]");
+      let options = null;
+      const add = form.querySelector("[data-opening-add]");
+      async function addRow() {
+        if (!options) options = await stockHoldOptions();
+        if (!options.cylinders.length) { form.querySelector(".form-error").textContent = "Add cylinder sizes in Stock & Price before recording opening cylinders."; return; }
+        addOpeningRow(rows, options);
+      }
+      add.addEventListener("click", () => {
+        addRow().catch((err) => { form.querySelector(".form-error").textContent = err.message; });
+      });
+    }
     if (customer) {
       q("name").value = customer.name || "";
       q("phone").value = customer.phone || "";
@@ -169,6 +250,7 @@ window.Cust = (function () {
         state_code: q("state_code").value.trim(),
         opening_type: f.otype, opening_amount: q("opening_amount").value.trim(), note: q("note").value.trim(),
       };
+      if (!edit) payload.held = openingPayload(form.querySelector("[data-opening-rows]"));
       try {
         const res = edit ? await Api.put("/api/customers/" + customer.id, payload) : await Api.post("/api/customers", payload);
         UI.closeModal();
@@ -256,51 +338,29 @@ window.Cust = (function () {
     q("amount").focus();
   }
 
-  /* ---------- Return empties ---------- */
-  function openReturnEmpties({ customerId, customerName, held, onSaved }) {
-    if (!held.length) { toast("This customer has no cylinders to return.", "error"); return; }
-    const body = UI.openModal("Return empties" + (customerName ? " · " + customerName : ""));
-    body.innerHTML =
-      '<form novalidate><p class="confirm-text">How many empty cylinders did the customer bring back?</p>' +
-      held.map((h) =>
-        '<div class="empty-line"><b>' + esc(h.name) + "<small>With customer: " + h.qty + "</small></b>" +
-        '<input class="input" name="qty_' + h.cylinder_type_id + '" inputmode="numeric" placeholder="0" data-max="' + h.qty + '">' +
-        '<em class="err" data-err="qty_' + h.cylinder_type_id + '"></em></div>').join("") +
-      '<div class="two"><label class="field"><span>Date</span><input class="input" type="date" name="date" max="' + today() + '"></label>' +
-      '<label class="field"><span>Note (optional)</span><input class="input" name="note" maxlength="200"></label></div>' +
-      '<div class="form-error" role="alert"></div>' +
-      '<div class="modal-foot"><button type="button" class="btn btn-white" data-close>Cancel</button>' +
-      '<button type="submit" class="btn btn-dark"><i data-cicon="check"></i>Save</button></div></form>';
-    renderIcons(body);
-    const form = body.querySelector("form");
-    form.elements.date.value = today();
-    form.querySelectorAll("[data-max]").forEach((inp) =>
-      inp.addEventListener("input", () => { inp.value = inp.value.replace(/\D/g, "").slice(0, 5); }));
-
-    let saving = false;
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      if (saving) return;
-      clearErrors(form);
-      const items = held
-        .map((h) => ({ cylinder_type_id: h.cylinder_type_id, qty: Number(form.elements["qty_" + h.cylinder_type_id].value) || 0 }))
-        .filter((i) => i.qty > 0);
-      if (!items.length) { showError(form, { message: "Enter how many empties came back." }); return; }
-      saving = true;
-      const btn = form.querySelector('[type="submit"]');
-      btn.disabled = true;
+  /* ---------- Opening cylinders on an existing customer ---------- */
+  async function openOpeningCylinders({ customerId, customerName, onSaved }) {
+    const body = UI.openModal("Add opening cylinders" + (customerName ? " · " + customerName : ""));
+    body.innerHTML = '<form novalidate><p class="hint">Record cylinders that were already with this customer before the new tracking workflow.</p>' +
+      '<div data-opening-rows></div><button class="btn btn-white" type="button" data-opening-add>Add another cylinder</button>' +
+      '<div class="form-error" role="alert"></div><div class="modal-foot"><button type="button" class="btn btn-white" data-close>Cancel</button>' +
+      '<button type="submit" class="btn btn-dark">Save opening cylinders</button></div></form>';
+    const form = body.querySelector("form"), rows = form.querySelector("[data-opening-rows]");
+    let options;
+    try { options = await stockHoldOptions(); }
+    catch (err) { form.querySelector(".form-error").textContent = "Could not load stock and suppliers. " + err.message; return; }
+    if (!options.cylinders.length) { form.querySelector(".form-error").textContent = "Add cylinder sizes in Stock & Price first."; return; }
+    addOpeningRow(rows, options);
+    form.querySelector("[data-opening-add]").addEventListener("click", () => addOpeningRow(rows, options));
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const held = openingPayload(rows);
+      if (!held.length) { form.querySelector(".form-error").textContent = "Add at least one cylinder quantity."; return; }
+      const btn = form.querySelector('[type="submit"]'); btn.disabled = true;
       try {
-        await Api.post("/api/customers/" + customerId + "/return-empties", {
-          items, date: form.elements.date.value || today(), note: form.elements.note.value.trim(),
-        });
-        UI.closeModal();
-        toast("Empties recorded");
-        if (onSaved) onSaved();
-      } catch (err) {
-        showError(form, err);
-        saving = false;
-        btn.disabled = false;
-      }
+        await Api.post("/api/customers/" + customerId + "/opening-cylinders", { held });
+        UI.closeModal(); toast("Opening cylinders recorded"); if (onSaved) onSaved();
+      } catch (err) { form.querySelector(".form-error").textContent = err.message; btn.disabled = false; }
     });
   }
 
@@ -334,5 +394,5 @@ window.Cust = (function () {
   document.addEventListener("DOMContentLoaded", () => { renderIcons(); showFlash(); });
 
   return { date, today, balanceTag, toast, flash, renderIcons, exportData,
-           openCustomerForm, openReceive, openReturnEmpties, openConfirm };
+           openCustomerForm, openReceive, openOpeningCylinders, openConfirm };
 })();

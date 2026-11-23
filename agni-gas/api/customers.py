@@ -5,10 +5,13 @@ Balance sign everywhere: + = customer owes us (udhaar / "To receive"),
                          - = customer has paid extra (advance).
 Balance = opening + sum(active sales: total - paid) - sum(active payments).
 """
+from datetime import date
+from decimal import Decimal, ROUND_HALF_UP
+
 from flask import jsonify, request
 
-from db import get_db, transaction
-from money import format_inr, to_rupees
+from db import get_db, transaction, sole_active_supplier_id
+from money import format_inr, to_paise, to_rupees
 
 from . import api_bp
 from .util import (RECEIVED_IN, ApiError, body, day_field, gstin_field, int_field,
@@ -52,6 +55,104 @@ def customer_row(cid, include_inactive=False):
 
 def customer_dict(cid):
     return _dict(customer_row(cid))
+
+
+def _parse_opening_held(db, held):
+    """Validate opening cylinder holdings before any customer/stock row is written."""
+    if not isinstance(held, list):
+        raise ApiError("Held cylinders must be a list.", field="held")
+    parsed, seen = [], set()
+    for item in held:
+        if not isinstance(item, dict):
+            raise ApiError("Invalid held-cylinder row.", field="held")
+        tid = int_field(item.get("cylinder_type_id"), "Cylinder size", minimum=1)
+        cylinder = db.execute("SELECT * FROM cylinder_types WHERE id=? AND active=1", (tid,)).fetchone()
+        if not cylinder:
+            raise ApiError("Cylinder size not found or inactive.", 404, "cylinder_type_id")
+        qty = int_field(item.get("qty"), "Held cylinder quantity", field="qty", minimum=1, maximum=100000)
+        if "supplier_id" not in item:
+            sid = sole_active_supplier_id(db)
+        else:
+            raw_sid = item.get("supplier_id")
+            sid = None if raw_sid in (None, "", "0") else int_field(raw_sid, "Supplier", field="supplier_id", minimum=1)
+        if sid is not None:
+            if not db.execute("SELECT 1 FROM suppliers WHERE id=? AND active=1", (sid,)).fetchone():
+                raise ApiError("Supplier not found or inactive.", 409, "supplier_id")
+            if not db.execute("SELECT 1 FROM supplier_items WHERE supplier_id=? AND cylinder_type_id=?", (sid, tid)).fetchone():
+                raise ApiError(f"Supplier is not linked to {cylinder['name']} in Stock & Price.", 409, "supplier_id")
+        key = (tid, sid)
+        if key in seen:
+            raise ApiError("The same cylinder size and supplier can appear only once.", 409, "held")
+        seen.add(key)
+        deposit_each = cylinder["security_paise"] if item.get("deposit_each") in (None, "") else money_field(
+            item, "deposit_each", f"{cylinder['name']} deposit per cylinder", allow_zero=True)
+        parsed.append({"tid": tid, "qty": qty, "supplier_id": sid, "deposit_each": deposit_each})
+    return parsed
+
+
+def _record_opening_held(db, customer_id, held):
+    day = date.today().isoformat()
+    for item in held:
+        tid, qty, sid = item["tid"], item["qty"], item["supplier_id"]
+        db.execute(
+            "INSERT INTO cylinder_ledger(customer_id,cylinder_type_id,delta,ref_type,ref_id,entry_date,note) "
+            "VALUES(?,?,?,'opening',NULL,?,?)",
+            (customer_id, tid, qty, day, "Cylinders already with customer"),
+        )
+        db.execute("UPDATE cylinder_types SET with_customers_qty=with_customers_qty+? WHERE id=?", (qty, tid))
+        db.execute(
+            "INSERT INTO customer_deposit_events(customer_id,cylinder_type_id,sale_id,supplier_id,kind,qty,amount_paise,event_date,status,note) "
+            "VALUES(?,?,NULL,?,'received',?,?,?,'active','Opening cylinders')",
+            (customer_id, tid, sid, qty, qty * item["deposit_each"], day),
+        )
+
+
+def customer_holdings_for_type(db, customer_id, cylinder_type_id):
+    """Return supplier-specific customer holdings plus legacy ledger-only unassigned stock."""
+    cylinder = db.execute("SELECT name FROM cylinder_types WHERE id=?", (cylinder_type_id,)).fetchone()
+    if not cylinder:
+        return []
+    events = db.execute(
+        "SELECT e.supplier_id,s.name AS supplier_name, "
+        "SUM(CASE e.kind WHEN 'received' THEN e.qty ELSE -e.qty END) AS qty, "
+        "SUM(CASE e.kind WHEN 'received' THEN e.amount_paise ELSE -e.amount_paise END) AS amount "
+        "FROM customer_deposit_events e LEFT JOIN suppliers s ON s.id=e.supplier_id "
+        "WHERE e.customer_id=? AND e.cylinder_type_id=? AND e.status='active' "
+        "GROUP BY e.supplier_id,s.name ORDER BY e.supplier_id",
+        (customer_id, cylinder_type_id),
+    ).fetchall()
+    result, recorded_qty = [], 0
+    for row in events:
+        qty = max(0, int(row["qty"] or 0))
+        amount = max(0, int(row["amount"] or 0))
+        if qty <= 0:
+            continue
+        recorded_qty += qty
+        each = int((Decimal(amount) / Decimal(qty)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+        result.append({
+            "cylinder_type_id": cylinder_type_id, "name": cylinder["name"],
+            "supplier_id": row["supplier_id"], "supplier_name": row["supplier_name"],
+            "qty": qty, "deposit_each": to_rupees(each), "deposit_total": to_rupees(amount),
+        })
+    ledger_qty = db.execute(
+        "SELECT COALESCE(SUM(delta),0) FROM cylinder_ledger WHERE customer_id=? AND cylinder_type_id=?",
+        (customer_id, cylinder_type_id),
+    ).fetchone()[0]
+    unassigned = max(0, int(ledger_qty or 0) - recorded_qty)
+    if unassigned:
+        result.append({"cylinder_type_id": cylinder_type_id, "name": cylinder["name"],
+                       "supplier_id": None, "supplier_name": None, "qty": unassigned,
+                       "deposit_each": "0.00", "deposit_total": "0.00"})
+    return result
+
+
+def _customer_holdings_payload(db, customer_id):
+    rows = db.execute(
+        "SELECT DISTINCT t.id,t.name,t.sort_order FROM cylinder_types t "
+        "JOIN cylinder_ledger l ON l.cylinder_type_id=t.id "
+        "WHERE l.customer_id=? ORDER BY t.sort_order,t.id", (customer_id,),
+    ).fetchall()
+    return [holding for row in rows for holding in customer_holdings_for_type(db, customer_id, row["id"])]
 
 
 # ---------------------------------------------------------------- list
@@ -126,15 +227,18 @@ def _parse(data, self_id=None):
 
 @api_bp.post("/customers")
 def customer_create():
-    f = _parse(body())
+    data = body()
+    f = _parse(data)
     db = get_db()
     with transaction(db):
+        held = _parse_opening_held(db, data.get("held", []))
         cid = db.execute(
             "INSERT INTO customers (name, phone, address, type, opening_balance_paise, note, billing_address, gstin, state_code)"
             " VALUES (?,?,?,?,?,?,?,?,?)",
             (f["name"], f["phone"], f["address"], f["type"], f["opening"], f["note"],
              f["billing_address"], f["gstin"], f["state_code"]),
         ).lastrowid
+        _record_opening_held(db, cid, held)
     return jsonify(customer_dict(cid)), 201
 
 
@@ -153,6 +257,26 @@ def customer_held_cylinders(cid):
     ).fetchall()
     return jsonify({str(row["cylinder_type_id"]): max(0, row["qty"])
                     for row in rows if row["qty"] > 0})
+
+@api_bp.get("/customers/<int:cid>/holdings")
+def customer_holdings(cid):
+    customer_row(cid, include_inactive=True)
+    return jsonify(_customer_holdings_payload(get_db(), cid))
+
+
+@api_bp.post("/customers/<int:cid>/opening-cylinders")
+def customer_opening_cylinders(cid):
+    customer_row(cid)
+    data = body()
+    held = data.get("held")
+    if not isinstance(held, list) or not held:
+        raise ApiError("Add at least one opening cylinder row.", field="held")
+    db = get_db()
+    with transaction(db):
+        parsed = _parse_opening_held(db, held)
+        _record_opening_held(db, cid, parsed)
+    return jsonify(_customer_holdings_payload(db, cid))
+
 
 @api_bp.put("/customers/<int:cid>")
 def customer_update(cid):
@@ -287,44 +411,8 @@ def customer_cylinders(cid):
 
 @api_bp.post("/customers/<int:cid>/return-empties")
 def return_empties(cid):
-    db = get_db()
     customer_row(cid)
-    data = body()
-    items = data.get("items")
-    if not isinstance(items, list) or not items:
-        raise ApiError("Enter how many empties came back.")
-    day = day_field(data)
-    note = text(data, "note", "Note", max_len=200)
-
-    wanted = {}
-    for it in items:
-        if not isinstance(it, dict):
-            raise ApiError("Invalid items.")
-        tid = int_field(it.get("cylinder_type_id"), "Cylinder type", minimum=1)
-        qty = int_field(it.get("qty", 0), "Quantity", field=f"qty_{tid}")
-        if qty:
-            wanted[tid] = wanted.get(tid, 0) + qty
-    if not wanted:
-        raise ApiError("Enter how many empties came back.")
-
-    with transaction(db):
-        held = {h["id"]: (h["qty"], h["name"]) for h in _held(db, cid)}
-        for tid, qty in wanted.items():
-            have, name = held.get(tid, (0, None))
-            if name is None:
-                raise ApiError("This customer does not have that cylinder size.", 409, field=f"qty_{tid}")
-            if qty > have:
-                raise ApiError(f"{name}: only {have} with this customer.", 409, field=f"qty_{tid}")
-        for tid, qty in wanted.items():
-            db.execute(
-                "INSERT INTO cylinder_ledger (customer_id, cylinder_type_id, delta, ref_type, entry_date, note)"
-                " VALUES (?,?,?,?,?,?)", (cid, tid, -qty, "return", day, note))
-            db.execute("UPDATE cylinder_types SET empty_qty = empty_qty + ?, "
-                       "with_customers_qty = with_customers_qty - ? WHERE id = ?", (qty, qty, tid))
-            db.execute(
-                "INSERT INTO stock_movements (cylinder_type_id, ref_type, ref_id, empty_delta, note)"
-                " VALUES (?,?,?,?,?)", (tid, "return", cid, qty, note))
-    return jsonify(_cylinders_payload(db, cid))
+    raise ApiError("Record returns from Sales → New sale so deposits stay correct.", 410)
 
 
 # ------------------------------------------------------- special prices

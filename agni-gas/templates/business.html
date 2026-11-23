@@ -11,9 +11,10 @@
   <form id="biz-form" novalidate>
     <div class="biz-grid">
       <label class="field"><span>Agency / legal business name *</span><input class="input" name="name" maxlength="120" required></label>
-      <label class="field"><span>GSTIN *</span><input class="input" name="gstin" maxlength="15" autocapitalize="characters" required></label>
+      <label class="field"><span>GSTIN (if registered)</span><input class="input" name="gstin" maxlength="15" autocapitalize="characters"></label>
+      <label class="field"><span>PAN</span><input class="input" name="pan" maxlength="10" autocapitalize="characters" placeholder="ABCDE1234F"><small class="hint">Must match the PAN embedded in your GSTIN.</small></label>
       <label class="field biz-wide"><span>Registered business address *</span><textarea class="textarea" name="address" maxlength="300" required></textarea></label>
-      <label class="field"><span>State code *</span><input class="input" name="state_code" maxlength="2" inputmode="numeric" placeholder="e.g. 22" required><small class="hint">Must match the first two digits of the agency GSTIN.</small></label>
+      <label class="field"><span>State *</span><select class="select" name="state_code" required><option value="">Choose state</option></select><small class="hint">Must match the first two digits of the agency GSTIN.</small></label>
       <label class="field"><span>Invoice number prefix</span><input class="input" name="invoice_prefix" maxlength="8" value="S"></label>
       <label class="field"><span>Phone</span><input class="input" name="phone" maxlength="30"></label>
       <label class="field"><span>Email</span><input class="input" name="email" maxlength="120" type="email"></label>

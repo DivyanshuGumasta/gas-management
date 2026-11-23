@@ -78,22 +78,18 @@ def _take_empty(db, tid, sid, qty):
         db.execute("UPDATE supplier_items SET empty_qty=MAX(0, empty_qty-?) WHERE cylinder_type_id=? AND supplier_id=?", (qty, tid, sid))
 
 
+def _give_empty(db, tid, sid, qty):
+    """Put returned empty cylinders into the selected supplier's empty stock."""
+    if sid and qty:
+        db.execute(
+            "UPDATE supplier_items SET empty_qty=empty_qty+? WHERE cylinder_type_id=? AND supplier_id=?",
+            (qty, tid, sid),
+        )
+
+
 def _take_full(db, tid, sid, qty, ref_type, ref_id):
-    """Take full cylinders out of one supplier's oldest lots first, then (if short) the oldest of any lot."""
-    remaining = qty
-    if sid:
-        for lot in db.execute(
-            "SELECT id, qty_left, unit_cost_paise FROM stock_lots WHERE cylinder_type_id=? AND supplier_id=? AND qty_left>0 "
-            "ORDER BY " + lots._ORDER, (tid, sid)).fetchall():
-            if remaining <= 0:
-                break
-            take = min(remaining, lot["qty_left"])
-            db.execute("UPDATE stock_lots SET qty_left=qty_left-? WHERE id=?", (take, lot["id"]))
-            db.execute("INSERT INTO lot_consumptions (lot_id, cylinder_type_id, ref_type, ref_id, qty, unit_cost_paise) VALUES (?,?,?,?,?,?)",
-                       (lot["id"], tid, ref_type, ref_id, take, lot["unit_cost_paise"]))
-            remaining -= take
-    if remaining > 0:
-        lots.consume_fifo(db, tid, remaining, ref_type, ref_id)
+    """Take supplier-preferred FIFO; any shortfall follows the original FIFO rule."""
+    return lots.consume_fifo(db, tid, qty, ref_type, ref_id, supplier_id=sid)
 
 
 @api_bp.get("/stock/extra")

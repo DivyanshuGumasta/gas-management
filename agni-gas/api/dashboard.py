@@ -29,7 +29,12 @@ def dashboard():
     # --- today's numbers (cancelled bills never count) ---
     s = db.execute(
         """
-        SELECT COALESCE(SUM(total_paise), 0)                                  AS sales,
+        SELECT COALESCE(SUM(CASE
+                   WHEN COALESCE(taxable_paise,0)=0 AND NOT EXISTS(
+                       SELECT 1 FROM sale_lines l WHERE l.sale_id=sales.id
+                   ) THEN total_paise
+                   ELSE COALESCE(taxable_paise,0)+COALESCE(gst_paise,0)
+               END), 0)                                                       AS sales,
                COALESCE(SUM(paid_paise), 0)                                   AS paid,
                COALESCE(SUM(MAX(total_paise - paid_paise, 0)), 0)             AS due,
                COUNT(DISTINCT CASE WHEN total_paise > paid_paise AND customer_id IS NOT NULL
@@ -58,7 +63,10 @@ def dashboard():
     per_day = {
         r["sale_date"]: r["total"]
         for r in db.execute(
-            "SELECT sale_date, SUM(total_paise) AS total FROM sales "
+            "SELECT sale_date, SUM(CASE "
+            "WHEN COALESCE(taxable_paise,0)=0 AND NOT EXISTS("
+            "SELECT 1 FROM sale_lines l WHERE l.sale_id=sales.id) THEN total_paise "
+            "ELSE COALESCE(taxable_paise,0)+COALESCE(gst_paise,0) END) AS total FROM sales "
             "WHERE sale_date BETWEEN ? AND ? AND status = 'active' GROUP BY sale_date",
             (start, t),
         )

@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS sales (
     received_in     TEXT NOT NULL DEFAULT 'cash',
     status          TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'cancelled')),
     cancelled_at    TEXT,
+    cancel_reason   TEXT,
     note            TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_sales_date ON sales(sale_date);
@@ -344,6 +345,7 @@ CREATE TABLE IF NOT EXISTS sale_lines (
     action          TEXT,
     cylinder_type_id INTEGER REFERENCES cylinder_types(id),
     item_id         INTEGER REFERENCES catalog_items(id),
+    supplier_id     INTEGER REFERENCES suppliers(id),
     description     TEXT NOT NULL,
     hsn             TEXT,
     unit            TEXT NOT NULL DEFAULT 'NOS',
@@ -357,6 +359,7 @@ CREATE TABLE IF NOT EXISTS sale_lines (
     sgst_paise      INTEGER NOT NULL DEFAULT 0,
     igst_paise      INTEGER NOT NULL DEFAULT 0,
     amount_paise    INTEGER NOT NULL DEFAULT 0,
+    retained_paise  INTEGER NOT NULL DEFAULT 0,
     detail          TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_sale_lines_sale ON sale_lines(sale_id, line_no);
@@ -368,6 +371,7 @@ CREATE TABLE IF NOT EXISTS customer_deposit_events (
     customer_id     INTEGER NOT NULL REFERENCES customers(id),
     cylinder_type_id INTEGER NOT NULL REFERENCES cylinder_types(id),
     sale_id         INTEGER REFERENCES sales(id),
+    supplier_id     INTEGER REFERENCES suppliers(id),
     kind            TEXT NOT NULL CHECK (kind IN ('received','refunded','forfeited')),
     qty             INTEGER NOT NULL DEFAULT 0,
     amount_paise    INTEGER NOT NULL DEFAULT 0,

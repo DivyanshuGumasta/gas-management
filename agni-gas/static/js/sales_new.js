@@ -2,7 +2,7 @@
 (function () {
   const $ = (id) => document.getElementById(id);
   const { esc, fmt } = UI;
-  const state = { customer: null, cylinders: [], goods: [], suppliers: [], business: null, special: {}, heldByType: {}, saving: false, loaded: false };
+  const state = { customer: null, cylinders: [], goods: [], suppliers: [], stockExtra: {}, states: [], business: null, special: {}, heldByType: {}, holdingsByType: {}, saving: false, loaded: false };
   const cyl = {}, good = {};
   const cents = (v) => { const n = Number(String(v ?? "").replace(/,/g, "")); return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : 0; };
   const rs = (p) => fmt.money((p / 100).toFixed(2));
@@ -38,11 +38,14 @@
     const discount = Math.min(cents($("sn-discount").value), gross);
     const place = ($("sn-place-state").value || (state.customer && (state.customer.state_code || (state.customer.gstin || "").slice(0, 2))) || (state.business && state.business.state_code) || "").trim();
     const interstate = !!(state.business && place && place !== state.business.state_code);
-    let remaining = discount, taxable = 0, gst = 0, cgst = 0, sgst = 0, igst = 0;
+    let taxable = 0, gst = 0, cgst = 0, sgst = 0, igst = 0;
+    const shares = lines.map((line) => gross ? Math.floor(discount * line.gross / gross) : 0);
+    let remainder = discount - shares.reduce((sum, value) => sum + value, 0);
+    const order = lines.map((line, index) => ({ index, remainder: gross ? (discount * line.gross) % gross : 0 }))
+      .sort((a, b) => b.remainder - a.remainder || a.index - b.index);
+    for (let i = 0; i < remainder && i < order.length; i++) shares[order[i].index] += 1;
     lines.forEach((line, i) => {
-      const share = i === lines.length - 1 ? remaining : (gross ? Math.floor(discount * line.gross / gross) : 0);
-      remaining -= share;
-      const base = line.gross - share;
+      const base = line.gross - shares[i];
       const tax = line.rateBp == null ? 0 : Math.round(base * line.rateBp / 10000);
       taxable += base; gst += tax;
       if (interstate) igst += tax;
@@ -50,7 +53,9 @@
     });
     const depositIn = state.cylinders.reduce((a, c) => a + (cyl[c.id].new_full + cyl[c.id].new_empty) * cents(cyl[c.id].security), 0);
     const depositBack = state.cylinders.reduce((a, c) => {
-      const s = cyl[c.id]; return a + (state.customer && s.dep_back ? s.empty_in * cents(s.dep_each) : 0);
+      const s = cyl[c.id];
+      if (!state.customer || !s.dep_back || !s.empty_in) return a;
+      return a + (s.dep_each_explicit ? s.empty_in * cents(s.dep_each) : refundPreviewPaise(c.id, s.empty_in, s.return_supplier_id));
     }, 0);
     return { lines, gross, discount, taxable, gst, cgst, sgst, igst, depositIn, depositBack,
       total: taxable + gst + depositIn - depositBack, interstate, place };
@@ -70,9 +75,6 @@
         return "The agency GSTIN is missing. Verify registration status and tax settings in Invoice settings with the CA.";
       }
     }
-    if ($("sn-reverse-charge").value === "yes") {
-      return "Reverse-charge invoices are not enabled yet. Have the CA confirm the applicable treatment before issuing one.";
-    }
     return "";
   }
   const anything = () => state.cylinders.some((c) => {
@@ -88,31 +90,77 @@
       '<input type="number" min="0"' + maxAttr + ' step="1" inputmode="numeric" value="' + value + '" data-f="' + field + '" data-id="' + id + '"' + inputDisabled + '>' +
       '<button type="button" class="pn-step ' + plusCls + '" data-step="1" data-f="' + field + '" data-id="' + id + '" aria-label="More"' + plusDisabled + '>+</button></div>';
   }
-  function taxLabel(x, rate, kind, id) {
-    return '<div class="sn-product-tax"><span>' + (x.hsn ? 'HSN ' + esc(x.hsn) : 'HSN not set') + '</span>' +
-      '<label>GST % <input type="number" min="0" max="100" step="0.01" value="' + esc(rate == null ? '' : rate) + '" ' +
-      'data-gst-kind="' + kind + '" data-gst-id="' + id + '" aria-label="GST percentage for ' + esc(x.name) + '"></label></div>';
+  function taxLabel(x, rate) {
+    return '<div class="sn-product-tax"><span>HSN ' + (x.hsn ? esc(x.hsn) : 'not set') + '</span>' +
+      '<span class="sn-gst-readonly">GST ' + (rate == null || rate === '' ? 'not set' : esc(rate) + '%') + '</span></div>';
+  }
+  function supplierLinks(id) {
+    const item = (state.stockExtra.cylinders || {})[String(id)] || {};
+    return item.suppliers || [];
+  }
+  function supplierOptions(id, selected, allowUnassigned) {
+    const links = supplierLinks(id);
+    let html = allowUnassigned ? '<option value="">Choose supplier</option>' : '<option value="">Choose supplier</option>';
+    html += links.map((x) => '<option value="' + x.supplier_id + '"' + (String(selected || '') === String(x.supplier_id) ? ' selected' : '') + '>' + esc(x.name) + '</option>').join('');
+    return html;
+  }
+  function defaultSupplier(id) {
+    const links = supplierLinks(id);
+    if (links.length === 1) return String(links[0].supplier_id);
+    if (state.suppliers.length === 1 && links.some((x) => String(x.supplier_id) === String(state.suppliers[0].id))) return String(state.suppliers[0].id);
+    return '';
+  }
+  function defaultReturnSupplier(id) {
+    const holdings = state.holdingsByType[id] || [];
+    const candidates = [...new Set(holdings.filter((h) => h.supplier_id != null && Number(h.qty) > 0).map((h) => String(h.supplier_id)))];
+    if (candidates.length === 1 && supplierLinks(id).some((x) => String(x.supplier_id) === candidates[0])) return candidates[0];
+    return defaultSupplier(id);
+  }
+  function refundPreviewPaise(id, qty, sid) {
+    let remaining = Math.max(0, Number(qty) || 0), total = 0;
+    const holdings = state.holdingsByType[id] || [];
+    const priority = sid ? [String(sid), null] : [null];
+    for (const supplier of priority) {
+      const row = holdings.find((h) => (h.supplier_id == null ? null : String(h.supplier_id)) === supplier);
+      if (!row || remaining <= 0) continue;
+      const availableQty = Number(row.qty) || 0;
+      const take = Math.min(remaining, availableQty);
+      const amount = cents(row.deposit_total || 0);
+      total += take === availableQty ? amount : Math.round(amount * take / availableQty);
+      remaining -= take;
+    }
+    return total;
+  }
+  function defaultRefundEach(id, sid, qty) {
+    const count = Math.max(1, Number(qty) || 1);
+    return (refundPreviewPaise(id, count, sid) / count / 100).toFixed(2);
+  }
+  function stateSelectOptions(selected) {
+    return '<option value="">Choose state</option>' + state.states.map((r) => '<option value="' + esc(r.code) + '"' + (String(selected || '') === String(r.code) ? ' selected' : '') + '>' + esc(r.name) + ' (' + esc(r.code) + ')</option>').join('');
   }
   function cylinderCard(c) {
     const s = cyl[c.id], used = s.refill + s.new_full, over = used > c.full;
     const held = Number(state.heldByType[c.id] || 0);
-    const customerLocked = !!state.customer && held <= 0;
-    const refillMax = state.customer ? Math.max(0, held - s.empty_in - s.damaged_in) : null;
-    const emptyReturnMax = state.customer ? Math.max(0, held - s.refill - s.damaged_in) : 0;
-    const damagedReturnMax = state.customer ? Math.max(0, held - s.refill - s.empty_in) : 0;
+    const returnLocked = !state.customer || held <= 0;
+    const emptyReturnMax = state.customer ? Math.max(0, held - s.empty_in - s.damaged_in) : 0;
+    const damagedReturnMax = emptyReturnMax;
+    const stockSelector = '<label class="sn-supplier-choice"><span>Supplier for cylinders supplied</span><select class="select" data-f="supplier_id" data-id="' + c.id + '">' + supplierOptions(c.id, s.supplier_id, false) + '</select></label>';
+    const returnSelector = state.customer ? '<label class="sn-supplier-choice"><span>Supplier receiving returned cylinders</span><select class="select" data-f="return_supplier_id" data-id="' + c.id + '">' + supplierOptions(c.id, s.return_supplier_id, false) + '</select></label>' : '';
     return '<article class="pn-item sn-card" data-cid="' + c.id + '">' +
-      '<div class="sn-head"><span class="pn-cylinder-icon">▣</span><div class="pn-item-title"><b>' + esc(c.name) + '</b>' + taxLabel(c, s.gstRate, 'cylinder', c.id) + '<small>Full: ' + c.full + ' · Empty: ' + c.empty + '</small>' +
-      (state.customer ? '<small class="sn-held-count">Customer-held: ' + held + ' · treated as empty for refill/return</small>' : '') + '</div>' +
+      '<div class="sn-head"><span class="pn-cylinder-icon">▣</span><div class="pn-item-title"><b>' + esc(c.name) + '</b>' + taxLabel(c, s.gstRate) + '<small>Full: ' + c.full + ' · Empty: ' + c.empty + '</small>' +
+      (state.customer ? '<small class="sn-held-count">Customer holds: ' + held + ' · only good/damaged returns reduce this</small>' : '') + '</div>' +
       '<button type="button" class="sn-price" data-edit-price="' + c.id + '" title="Tap to change the selling price">Rs ' + esc(fmt.money(s.rate).replace(/^Rs\s?/, "")) + ' <i class="sn-pencil">✎</i></button></div>' +
-      '<div class="pn-qty-line"><div><b>Refill</b><small>Full cylinder supplied against one customer-held cylinder</small></div>' + stepper("refill", c.id, s.refill, "pn-step-minus", "pn-step-plus", customerLocked, refillMax) + '</div>' +
+      '<div class="pn-qty-line"><div><b>Refill</b><small>Full cylinder supplied; does not change customer-held quantity</small></div>' + stepper("refill", c.id, s.refill, "pn-step-minus", "pn-step-plus", false, null) + '</div>' +
       '<div class="pn-qty-line"><div><b>Good empty in</b><small>Customer returns a usable held cylinder</small></div>' +
-      stepper("empty_in", c.id, s.empty_in, "pn-step-minus", "sn-step-orange", !state.customer || customerLocked, emptyReturnMax) + '</div>' +
-      (s.empty_in && state.customer ? '<label class="sn-depback"><input type="checkbox" data-depback="' + c.id + '"' + (s.dep_back ? ' checked' : '') + '><span><b>Refund customer security deposit</b><small>Refund for ' + s.empty_in + ' returned cylinder(s)</small></span>' +
+      stepper("empty_in", c.id, s.empty_in, "pn-step-minus", "sn-step-orange", returnLocked, emptyReturnMax) + '</div>' +
+      (s.empty_in && state.customer ? '<label class="sn-depback"><input type="checkbox" data-depback="' + c.id + '"' + (s.dep_back ? ' checked' : '') + '><span><b>Refund customer security deposit</b><small>Prefilled from recorded deposit, capped at the amount held</small></span>' +
         (s.dep_back ? '<span class="pn-rate sn-dep-each"><span><i>Rs</i><input type="number" min="0" step="0.01" value="' + esc(s.dep_each) + '" data-f="dep_each" data-id="' + c.id + '"></span></span>' : '') + '</label>' : '') +
       (state.customer ? '<div class="pn-qty-line"><div><b>Damaged cylinder in</b><small>Customer deposit is forfeited; cylinder moves to damaged stock</small></div>' +
-        stepper("damaged_in", c.id, s.damaged_in, "pn-step-minus", "sn-step-orange", customerLocked, damagedReturnMax) + '</div>' : '') +
+        stepper("damaged_in", c.id, s.damaged_in, "pn-step-minus", "sn-step-orange", returnLocked, damagedReturnMax) + '</div>' : '') +
       (over ? '<p class="sn-warn">Only ' + c.full + ' full cylinder(s) in stock.</p>' : '') +
       '<button type="button" class="pn-bought-toggle sn-toggle' + (s.open ? ' on' : '') + '" data-toggle="' + c.id + '">Sell new cylinder or empty ' + (s.open ? '▴' : '▾') + '</button>' +
+      ((s.refill || s.new_full || s.new_empty) ? stockSelector : '') +
+      ((s.empty_in || s.damaged_in) ? returnSelector : '') +
       (s.open ? '<div class="sn-more"><label class="pn-rate sn-dep"><small>Refundable security deposit (per cylinder)</small><span><i>Rs</i><input type="number" min="0" step="0.01" value="' + esc(s.security) + '" data-f="security" data-id="' + c.id + '"></span></label>' +
         '<div class="pn-qty-line"><div><b>New full cylinder</b><small>Gas price plus refundable security deposit</small></div>' + stepper("new_full", c.id, s.new_full, "pn-step-minus", "pn-step-plus") + '</div>' +
         '<div class="pn-qty-line"><div><b>Empty cylinder only</b><small>Refundable security deposit only</small></div>' + stepper("new_empty", c.id, s.new_empty, "pn-step-minus", "pn-step-plus") + '</div></div>' : '') +
@@ -120,7 +168,7 @@
   }
   function goodCard(g) {
     const s = good[g.id];
-    return '<article class="sn-good" data-gid="' + g.id + '"><div class="pn-item-title"><b>' + esc(g.name) + '</b>' + taxLabel(g, s.gstRate, 'item', g.id) + '<small>In stock: ' + esc(g.qty) + ' ' + esc(g.unit) + '</small></div>' +
+    return '<article class="sn-good" data-gid="' + g.id + '"><div class="pn-item-title"><b>' + esc(g.name) + '</b>' + taxLabel(g, s.gstRate) + '<small>In stock: ' + esc(g.qty) + ' ' + esc(g.unit) + '</small></div>' +
       '<button type="button" class="sn-price" data-edit-gprice="' + g.id + '">Rs ' + esc(fmt.money(s.rate).replace(/^Rs\s?/, "")) + ' <i class="sn-pencil">✎</i></button>' +
       '<label class="sn-qty"><small>Quantity (' + esc(g.unit) + ')</small><input type="number" min="0" step="any" inputmode="decimal" value="' + (s.qty || '') + '" placeholder="0" data-gqty="' + g.id + '"></label>' +
       '<b class="sn-gamt" data-gamt="' + g.id + '">' + rs(Math.round(Number(s.qty || 0) * cents(s.rate))) + '</b></article>';
@@ -161,24 +209,27 @@
     $("sn-pay-hint").textContent = state.customer ? 'Udhaar is added to ' + state.customer.name + '’s balance.' : 'Walk-in sales must be paid immediately.';
     const due = mode === 'paid' ? 0 : t.total - (mode === 'credit' ? 0 : cents(paid.value));
     $("sn-due-row").hidden = !(state.customer && due > 0); $("sn-due").textContent = rs(Math.max(0, due));
-    const damaged = state.cylinders.some((c) => cyl[c.id].damaged_in > 0);
-    $("sn-damaged-supplier-wrap").hidden = !damaged || state.suppliers.length <= 1;
     const noCustomerForDeposit = !state.customer && state.cylinders.some((c) => cyl[c.id].new_full || cyl[c.id].new_empty || cyl[c.id].empty_in || cyl[c.id].damaged_in);
     const configError = taxConfigError();
     $("sn-tax-warning").textContent = configError || (noCustomerForDeposit ? 'Select a customer before issuing a cylinder or processing a cylinder return.' : '');
     $("sn-tax-warning").hidden = !$("sn-tax-warning").textContent;
     const over = state.cylinders.some((c) => {
       const s = cyl[c.id], held = Number(state.heldByType[c.id] || 0);
-      const customerUse = s.refill + s.empty_in + s.damaged_in;
+      const returnUse = s.empty_in + s.damaged_in;
+      const stockNeedsSupplier = s.refill || s.new_full || s.new_empty;
+      const returnNeedsSupplier = returnUse > 0;
+      const stockMissing = stockNeedsSupplier && supplierLinks(c.id).length > 0 && !s.supplier_id;
+      const returnMissing = returnNeedsSupplier && supplierLinks(c.id).length > 0 && !s.return_supplier_id;
       return s.refill + s.new_full > c.full || s.new_empty > c.empty ||
-        (!!state.customer && customerUse > held);
+        (!!state.customer && returnUse > held) || stockMissing || returnMissing ||
+        (!!state.suppliers.length && !!stockNeedsSupplier && !supplierLinks(c.id).length) ||
+        (!!state.suppliers.length && !!returnNeedsSupplier && !supplierLinks(c.id).length);
     });
-    const supplierMissing = damaged && state.suppliers.length > 1 && !$("sn-damaged-supplier").value;
-    $("sn-save").disabled = state.saving || !anything() || !!configError || noCustomerForDeposit || over || supplierMissing;
+    $("sn-save").disabled = state.saving || !anything() || !!configError || noCustomerForDeposit || over;
   }
 
   async function setCustomer(c) {
-    state.customer = c || null; state.special = {}; state.heldByType = {};
+    state.customer = c || null; state.special = {}; state.heldByType = {}; state.holdingsByType = {};
     $("sn-cust-avatar").textContent = c ? fmt.initials(c.name) : 'W';
     $("sn-cust-name").textContent = c ? c.name : 'Walk-in customer';
     $("sn-cust-meta").textContent = c ? ((c.type === 'wholesale' ? 'Wholesale' : 'Retail') + (c.phone ? ' · ' + c.phone : '')) : 'Cash sale, no udhaar';
@@ -191,10 +242,20 @@
       try {
         const [prices, held] = await Promise.all([
           Api.get('/api/customers/' + c.id + '/prices'),
-          Api.get('/api/customers/' + c.id + '/held-cylinders'),
+          Api.get('/api/customers/' + c.id + '/holdings'),
         ]);
         prices.forEach((p) => { if (p.special_price != null) state.special[p.cylinder_type_id] = p.special_price; });
-        state.heldByType = held || {};
+        (held || []).forEach((h) => {
+          (state.holdingsByType[h.cylinder_type_id] ||= []).push(h);
+          state.heldByType[h.cylinder_type_id] = (state.heldByType[h.cylinder_type_id] || 0) + Number(h.qty || 0);
+        });
+        state.cylinders.forEach((item) => {
+          const row = cyl[item.id];
+          row.return_supplier_id = defaultReturnSupplier(item.id);
+          row.supplier_id = defaultSupplier(item.id);
+          row.dep_each = defaultRefundEach(item.id, row.return_supplier_id, 1);
+          row.dep_each_explicit = false;
+        });
       } catch (_) {
         state.heldByType = {};
       }
@@ -212,13 +273,20 @@
     const step = e.target.closest('[data-step]');
     if (step) {
       const id = step.dataset.id, s = cyl[id], f = step.dataset.f;
-      const heldAction = ['refill', 'empty_in', 'damaged_in'].includes(f);
-      if (state.customer && heldAction) {
+      const returnAction = ['empty_in', 'damaged_in'].includes(f);
+      if (state.customer && returnAction) {
         const held = Number(state.heldByType[id] || 0);
-        const used = s.refill + s.empty_in + s.damaged_in;
+        const used = s.empty_in + s.damaged_in;
         if (Number(step.dataset.step) > 0 && used >= held) return;
       }
+      const beforeGood = s.empty_in;
       s[f] = Math.max(0, s[f] + Number(step.dataset.step));
+      if (f === 'empty_in' && beforeGood === 0 && s.empty_in > 0) {
+        if (!s.return_supplier_id) s.return_supplier_id = defaultReturnSupplier(id);
+        s.dep_each = defaultRefundEach(id, s.return_supplier_id, s.empty_in);
+        s.dep_each_explicit = false;
+        s.dep_back = true;
+      }
       renderCylinders(); update(); return;
     }
     const toggle = e.target.closest('[data-toggle]');
@@ -230,35 +298,37 @@
   });
   $("sn-cylinders").addEventListener('change', (e) => {
     const t = e.target;
-    if (t.dataset.gstKind === 'cylinder') {
-      cyl[t.dataset.gstId].gstRate = t.value;
-      update();
-      return;
-    }
     if (!t.dataset.f) return;
     const s = cyl[t.dataset.id], field = t.dataset.f;
+    if (field === 'supplier_id') { s.supplier_id = t.value; update(); return; }
+    if (field === 'return_supplier_id') {
+      s.return_supplier_id = t.value;
+      s.dep_each = defaultRefundEach(t.dataset.id, t.value, s.empty_in || 1);
+      s.dep_each_explicit = false;
+      renderCylinders(); update(); return;
+    }
     let value = (field === 'security' || field === 'dep_each') ? t.value : num(t.value);
-    if (state.customer && ['refill', 'empty_in', 'damaged_in'].includes(field)) {
+    if (state.customer && ['empty_in', 'damaged_in'].includes(field)) {
       const held = Number(state.heldByType[t.dataset.id] || 0);
-      const alreadyUsed = s.refill + s.empty_in + s.damaged_in - s[field];
+      const alreadyUsed = s.empty_in + s.damaged_in - s[field];
       value = Math.min(value, Math.max(0, held - alreadyUsed));
     }
+    if (field === 'empty_in' && Number(value) > 0 && !s.dep_back) {
+      s.dep_back = true; s.dep_each = defaultRefundEach(t.dataset.id, s.return_supplier_id, value);
+      s.dep_each_explicit = false;
+    }
     s[field] = value;
+    if (field === 'dep_each') s.dep_each_explicit = true;
     renderCylinders(); update();
   });
   $("sn-cylinders").addEventListener('change', (e) => { const id = e.target.dataset.depback; if (!id) return; cyl[id].dep_back = e.target.checked; renderCylinders(); update(); });
   $("sn-goods").addEventListener('input', (e) => {
-    if (e.target.dataset.gstKind === 'item') {
-      good[e.target.dataset.gstId].gstRate = e.target.value;
-      update();
-      return;
-    }
     const id = e.target.dataset.gqty;
     if (!id) return;
     good[id].qty = e.target.value;
     update();
   });
-  ['sn-discount', 'sn-paid', 'sn-payment', 'sn-place-state', 'sn-damaged-supplier'].forEach((id) => { $(id).addEventListener('input', update); $(id).addEventListener('change', update); });
+  ['sn-discount', 'sn-paid', 'sn-payment', 'sn-place-state'].forEach((id) => { $(id).addEventListener('input', update); $(id).addEventListener('change', update); });
   $("sn-payment").addEventListener('change', update);
   $("sn-discount").addEventListener('input', (e) => Cust.cleanMoneyInput && Cust.cleanMoneyInput(e.target));
   $("sn-cust-pick").addEventListener('click', () => UI.selectCustomer(setCustomer));
@@ -273,17 +343,19 @@
       refill: cyl[c.id].refill, new_full: cyl[c.id].new_full, new_empty: cyl[c.id].new_empty,
       empty_in: cyl[c.id].empty_in, damaged_in: cyl[c.id].damaged_in,
       deposit_back: !!(state.customer && cyl[c.id].dep_back && cyl[c.id].empty_in),
-      deposit_each: String(cyl[c.id].dep_each), rate: String(cyl[c.id].rate), security: String(cyl[c.id].security), gst_rate: String(cyl[c.id].gstRate) }))
+      ...(cyl[c.id].dep_each_explicit ? { deposit_each: String(cyl[c.id].dep_each) } : {}),
+      rate: String(cyl[c.id].rate), security: String(cyl[c.id].security),
+      supplier_id: cyl[c.id].supplier_id || null, return_supplier_id: cyl[c.id].return_supplier_id || null }))
       .filter((l) => l.refill || l.new_full || l.new_empty || l.empty_in || l.damaged_in);
     const items = state.goods.filter((g) => Number(good[g.id].qty) > 0)
-      .map((g) => ({ item_id: g.id, qty: String(good[g.id].qty), rate: String(good[g.id].rate), gst_rate: String(good[g.id].gstRate) }));
+      .map((g) => ({ item_id: g.id, qty: String(good[g.id].qty), rate: String(good[g.id].rate) }));
     try {
       const r = await Api.post('/api/sales', {
         customer_id: state.customer ? state.customer.id : null, date: $("sn-date").value,
-        place_state_code: $("sn-place-state").value, reverse_charge: $("sn-reverse-charge").value,
+        place_state_code: $("sn-place-state").value,
         lines, items, discount: $("sn-discount").value.trim(), payment: $("sn-payment").value,
         received_in: $("sn-received").value, paid: $("sn-paid").value.trim(),
-        damaged_supplier_id: $("sn-damaged-supplier").value, note: $("sn-note").value.trim(),
+        note: $("sn-note").value.trim(),
       });
       window.location.href = '/sales/' + r.id + '?new=1';
     } catch (ex) { state.saving = false; update(); showError(ex.message || 'Could not save the invoice.'); }
@@ -295,22 +367,27 @@
     $("sn-date").value = Cust.today(); $("sn-date").max = Cust.today();
     Cust.renderIcons(); if (window.Icons) Icons.render(document);
     try {
-      const [stock, extra, business] = await Promise.all([
-        Api.get('/api/stock'), Api.get('/api/stock/extra'), Api.get('/api/business'),
+      const [stock, extra, business, states] = await Promise.all([
+        Api.get('/api/stock'), Api.get('/api/stock/extra'), Api.get('/api/business'), Api.get('/api/states'),
       ]);
-      state.cylinders = stock.cylinders; state.goods = stock.items; state.suppliers = extra.suppliers || []; state.business = business;
-      $("sn-place-state").value = business.state_code || '';
-      $("sn-damaged-supplier").innerHTML = '<option value="">Choose supplier</option>' + state.suppliers.map((s) => '<option value="' + s.id + '">' + esc(s.name) + '</option>').join('');
-      if (state.suppliers.length === 1) $("sn-damaged-supplier").value = String(state.suppliers[0].id);
+      state.cylinders = stock.cylinders; state.goods = stock.items; state.suppliers = extra.suppliers || [];
+      state.stockExtra = extra; state.business = business; state.states = states || [];
+      $("sn-place-state").innerHTML = stateSelectOptions(business.state_code || '');
       state.cylinders.forEach((c) => { cyl[c.id] = { refill: 0, new_full: 0, new_empty: 0, empty_in: 0, damaged_in: 0,
         rate: c.sale_price, security: c.security, gstRate: c.gst_rate == null ? '' : String(c.gst_rate),
-        open: false, dep_back: false, dep_each: c.security }; });
+        supplier_id: defaultSupplier(c.id), return_supplier_id: defaultSupplier(c.id),
+        open: false, dep_back: false, dep_each: '0.00', dep_each_explicit: false }; });
       state.goods.forEach((g) => { good[g.id] = { qty: '', rate: g.sale_price,
         gstRate: g.gst_rate == null ? '' : String(g.gst_rate) }; });
     } catch (ex) { showError('Could not load invoice settings or stock. ' + ex.message); $("sn-save").disabled = true; return; }
     renderAll();
-    const pre = new URLSearchParams(location.search).get('customer');
+    const params = new URLSearchParams(location.search);
+    const pre = params.get('customer');
     if (pre) { try { await setCustomer(await Api.get('/api/customers/' + pre)); } catch (_) { /* remain walk-in */ } }
+    if (params.get('return') === '1') {
+      state.cylinders.forEach((c) => { cyl[c.id].open = false; });
+      renderAll();
+    }
   }
   window.SalesNew = { open: start };
 })();

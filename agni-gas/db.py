@@ -61,6 +61,14 @@ def init_db(path: str | None = None) -> None:
                 "reverse_charge": "INTEGER NOT NULL DEFAULT 0",
                 "business_snapshot_json": "TEXT NOT NULL DEFAULT '{}'",
                 "customer_snapshot_json": "TEXT NOT NULL DEFAULT 'null'",
+                "cancel_reason": "TEXT",
+            },
+            "sale_lines": {
+                "supplier_id": "INTEGER REFERENCES suppliers(id)",
+                "retained_paise": "INTEGER NOT NULL DEFAULT 0",
+            },
+            "customer_deposit_events": {
+                "supplier_id": "INTEGER REFERENCES suppliers(id)",
             },
             "cylinder_deposits": {
                 "sale_id": "INTEGER REFERENCES sales(id)",
