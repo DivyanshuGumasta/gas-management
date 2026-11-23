@@ -48,6 +48,7 @@
     const b = sale.business || {}, c = sale.customer || null, cancelled = sale.status === 'cancelled';
     $('rc-main').hidden = false;
     $('rc-title').textContent = 'Invoice ' + sale.number;
+    $('rc-download-pdf').href = '/api/sales/' + sid + '/pdf';
     $('rc-sub').textContent = Cust.date(sale.date) + ' · ' + sale.time;
     $('rc-number').textContent = sale.number;
     $('rc-date').textContent = Cust.date(sale.date);

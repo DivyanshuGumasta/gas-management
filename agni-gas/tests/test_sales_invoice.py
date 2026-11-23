@@ -63,6 +63,8 @@ class InvoiceTests(unittest.TestCase):
     def test_product_hsn_is_snapshotted_and_tax_is_split(self):
         cylinder = self.make_cylinder()
         customer = self.make_customer()
+        issued = self.sell(cylinder, customer, new_full=1)
+        self.assertEqual(issued.status_code, 201, issued.get_json())
         response = self.sell(cylinder, customer, refill=1)
         self.assertEqual(response.status_code, 201, response.get_json())
         invoice_id = response.get_json()["id"]
@@ -269,6 +271,8 @@ class InvoiceTests(unittest.TestCase):
     def test_paid_invoice_cannot_be_cancelled_without_refund_workflow(self):
         cylinder = self.make_cylinder()
         customer = self.make_customer()
+        issued = self.sell(cylinder, customer, new_full=1)
+        self.assertEqual(issued.status_code, 201, issued.get_json())
         response = self.sell(cylinder, customer, refill=1)
         self.assertEqual(response.status_code, 201, response.get_json())
         sale_id = response.get_json()["id"]
@@ -280,6 +284,8 @@ class InvoiceTests(unittest.TestCase):
     def test_unpaid_credit_invoice_can_be_cancelled_and_restores_stock(self):
         cylinder = self.make_cylinder()
         customer = self.make_customer()
+        issued = self.sell(cylinder, customer, new_full=1)
+        self.assertEqual(issued.status_code, 201, issued.get_json())
         response = self.client.post("/api/sales", json={
             "customer_id": customer["id"], "date": date.today().isoformat(), "place_state_code": "22",
             "lines": [{"cylinder_type_id": cylinder["id"], "refill": 1, "rate": "100"}],
@@ -288,21 +294,89 @@ class InvoiceTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201, response.get_json())
         sale_id = response.get_json()["id"]
         before = self.conn.execute("SELECT full_qty,empty_qty FROM cylinder_types WHERE id=?", (cylinder["id"],)).fetchone()
-        self.assertEqual((before["full_qty"], before["empty_qty"]), (4, 3))
+        self.assertEqual((before["full_qty"], before["empty_qty"]), (3, 3))
         cancelled = self.client.post(f"/api/sales/{sale_id}/cancel", json={})
         self.assertEqual(cancelled.status_code, 200, cancelled.get_json())
         after = self.conn.execute("SELECT full_qty,empty_qty FROM cylinder_types WHERE id=?", (cylinder["id"],)).fetchone()
-        self.assertEqual((after["full_qty"], after["empty_qty"]), (5, 2))
+        self.assertEqual((after["full_qty"], after["empty_qty"]), (4, 2))
         self.assertEqual(self.conn.execute("SELECT status FROM sales WHERE id=?", (sale_id,)).fetchone()[0], "cancelled")
 
     def test_failed_stock_validation_does_not_create_invoice(self):
         cylinder = self.make_cylinder()
         customer = self.make_customer()
+        self.conn.execute(
+            "INSERT INTO cylinder_ledger(customer_id,cylinder_type_id,delta,ref_type,ref_id,entry_date,note) "
+            "VALUES(?,?,99,'test',0,?,?)",
+            (customer["id"], cylinder["id"], date.today().isoformat(), "Test held-cylinder balance"),
+        )
+        self.conn.commit()
         before = self.conn.execute("SELECT COUNT(*) FROM sales").fetchone()[0]
         response = self.sell(cylinder, customer, refill=99)
         self.assertEqual(response.status_code, 409)
         after = self.conn.execute("SELECT COUNT(*) FROM sales").fetchone()[0]
         self.assertEqual(after, before)
+
+    def test_refill_requires_a_customer_held_cylinder(self):
+        cylinder = self.make_cylinder()
+        customer = self.make_customer()
+        before = self.conn.execute("SELECT COUNT(*) FROM sales").fetchone()[0]
+        response = self.sell(cylinder, customer, refill=1)
+        self.assertEqual(response.status_code, 409, response.get_json())
+        self.assertIn("customer holds only", response.get_json()["error"].lower())
+        after = self.conn.execute("SELECT COUNT(*) FROM sales").fetchone()[0]
+        self.assertEqual(after, before)
+
+    def test_refill_and_return_cannot_use_the_same_held_cylinder_twice(self):
+        cylinder = self.make_cylinder()
+        customer = self.make_customer()
+        issued = self.sell(cylinder, customer, new_full=1)
+        self.assertEqual(issued.status_code, 201, issued.get_json())
+        before = self.conn.execute("SELECT COUNT(*) FROM sales").fetchone()[0]
+
+        response = self.sell(cylinder, customer, refill=1, empty_in=1)
+        self.assertEqual(response.status_code, 409, response.get_json())
+        after = self.conn.execute("SELECT COUNT(*) FROM sales").fetchone()[0]
+        self.assertEqual(after, before)
+
+    def test_invoice_gst_rate_can_override_stock_rate_without_changing_stock(self):
+        cylinder = self.make_cylinder()
+        customer = self.make_customer()
+        issued = self.sell(cylinder, customer, new_full=1)
+        self.assertEqual(issued.status_code, 201, issued.get_json())
+
+        response = self.sell(cylinder, customer, refill=1, gst_rate="5")
+        self.assertEqual(response.status_code, 201, response.get_json())
+        detail = self.client.get(f"/api/sales/{response.get_json()['id']}").get_json()
+        self.assertEqual(detail["lines"][0]["gst_rate"], 5)
+        self.assertEqual(detail["gst"], "5.00")
+        self.assertEqual(detail["total"], "105.00")
+
+        stock = self.client.get("/api/stock").get_json()
+        saved = next(x for x in stock["cylinders"] if x["id"] == cylinder["id"])
+        self.assertEqual(float(saved["gst_rate"]), 18.0)
+
+    def test_invoice_pdf_endpoint_returns_a_downloadable_pdf(self):
+        cylinder = self.make_cylinder()
+        customer = self.make_customer()
+        issued = self.sell(cylinder, customer, new_full=1)
+        self.assertEqual(issued.status_code, 201, issued.get_json())
+        sale_id = issued.get_json()["id"]
+
+        response = self.client.get(f"/api/sales/{sale_id}/pdf")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "application/pdf")
+        self.assertTrue(response.data.startswith(b"%PDF-"))
+        self.assertIn("attachment", response.headers.get("Content-Disposition", ""))
+
+    def test_customer_held_cylinders_endpoint_groups_by_cylinder_type(self):
+        cylinder = self.make_cylinder()
+        customer = self.make_customer()
+        issued = self.sell(cylinder, customer, new_full=2)
+        self.assertEqual(issued.status_code, 201, issued.get_json())
+
+        response = self.client.get(f"/api/customers/{customer['id']}/held-cylinders")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), {str(cylinder["id"]): 2})
 
 
 if __name__ == "__main__":

@@ -142,6 +142,17 @@ def customer_create():
 def customer_get(cid):
     return jsonify(customer_dict(cid))
 
+@api_bp.get("/customers/<int:cid>/held-cylinders")
+def customer_held_cylinders(cid):
+    """Return the customer's currently held cylinder count, grouped by size."""
+    customer_row(cid)
+    rows = get_db().execute(
+        "SELECT cylinder_type_id, COALESCE(SUM(delta),0) AS qty "
+        "FROM cylinder_ledger WHERE customer_id=? GROUP BY cylinder_type_id",
+        (cid,),
+    ).fetchall()
+    return jsonify({str(row["cylinder_type_id"]): max(0, row["qty"])
+                    for row in rows if row["qty"] > 0})
 
 @api_bp.put("/customers/<int:cid>")
 def customer_update(cid):

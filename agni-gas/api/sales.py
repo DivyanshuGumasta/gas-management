@@ -7,8 +7,8 @@ and separately from supplier deposits in cylinder_deposits.
 from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
 import json
-
-from flask import jsonify, request
+from io import BytesIO
+from flask import jsonify, request, send_file
 
 import lots
 from db import get_db, next_number, transaction
@@ -18,8 +18,8 @@ from .business import business_dict, missing_business
 from .customers import customer_row
 from .stock import _movement
 from .stock_suppliers import _optional_supplier, _security
-from .util import ApiError, RECEIVED_IN, body, day_field, int_field, money_field, quantity_milli_field, text
-
+from .util import (ApiError, RECEIVED_IN, body, day_field, gst_rate_bp_field,
+                   int_field, money_field, quantity_milli_field, text)
 
 def _round_ratio(numerator, denominator):
     if denominator <= 0:
@@ -40,6 +40,14 @@ def _money(raw, label, allow_zero=True):
         raise ApiError(f"{label} must be {'zero or more' if allow_zero else 'more than zero'}.", field=label)
     return value
 
+def _effective_gst_rate(raw, stock_rate_bp, product_name):
+    """Use the invoice's submitted percentage when present; otherwise use Stock & Price."""
+    if "gst_rate" not in raw:
+        return stock_rate_bp
+    value = gst_rate_bp_field(raw)
+    if value is None:
+        raise ApiError(f"Set a GST rate for {product_name} before invoicing.", 422, "gst_rate")
+    return value
 
 def _deposit_balance(db, customer_id, cylinder_type_id):
     row = db.execute(
@@ -171,6 +179,24 @@ def sale_get(sid):
         raise ApiError("Invoice not found.", 404)
     return jsonify(_sale_payload(db, row))
 
+@api_bp.get("/sales/<int:sid>/pdf")
+def sale_pdf(sid):
+    db = get_db()
+    row = db.execute("SELECT * FROM sales WHERE id=?", (sid,)).fetchone()
+    if not row:
+        raise ApiError("Invoice not found.", 404)
+
+    try:
+        from invoice_pdf import build_invoice_pdf
+    except ImportError as exc:
+        raise ApiError("PDF support is not installed. Run pip install -r requirements.txt.", 503) from exc
+
+    pdf_data = build_invoice_pdf(_sale_payload(db, row))
+    safe_number = "".join(ch for ch in row["number"] if ch.isalnum() or ch in "-_") or str(sid)
+    return send_file(
+        BytesIO(pdf_data), mimetype="application/pdf", as_attachment=True,
+        download_name=f"Invoice-{safe_number}.pdf", max_age=0,
+    )
 
 @api_bp.post("/sales")
 def sale_create():
@@ -245,8 +271,15 @@ def sale_create():
                 raise ApiError(f"{c['name']}: only {c['empty_qty']} empty cylinder(s) are available.", 409)
             if (qty["new_full"] or qty["new_empty"] or qty["empty_in"] or qty["damaged_in"]) and not customer:
                 raise ApiError("Select a customer for cylinder deposits and cylinder returns.", field="customer_id")
-            if customer and qty["empty_in"] + qty["damaged_in"] > _held_cylinders(db, customer["id"], tid):
-                raise ApiError(f"{c['name']}: the customer does not hold that many cylinders.", 409)
+            if customer:
+                held_qty = _held_cylinders(db, customer["id"], tid)
+                held_cylinders_used = qty["refill"] + qty["empty_in"] + qty["damaged_in"]
+                if held_cylinders_used > held_qty:
+                    raise ApiError(
+                        f"{c['name']}: the customer holds only {held_qty} cylinder(s). "
+                        "A refill or return needs a cylinder already held by this customer.",
+                        409,
+                    )
             if customer and (qty["damaged_in"] or (qty["empty_in"] and raw.get("deposit_back"))):
                 deposit_qty, _deposit_amount = _deposit_balance(db, customer["id"], tid)
                 refund_qty = qty["empty_in"] if raw.get("deposit_back") else 0
@@ -263,7 +296,7 @@ def sale_create():
                 cylinder_totals[tid][key] += number
 
             hsn = c["hsn"]
-            rate_bp = c["gst_rate_bp"]
+            rate_bp = _effective_gst_rate(raw, c["gst_rate_bp"], c["name"])
             if qty["refill"] or qty["new_full"]:
                 if not hsn:
                     raise ApiError(f"Set an HSN/SAC code for {c['name']} in Stock & Price before invoicing.", 422, "hsn")
@@ -351,9 +384,10 @@ def sale_create():
             rate = money_field({"rate": raw.get("rate", "0")}, "rate", f"{item['name']} selling price")
             if not item["hsn"]:
                 raise ApiError(f"Set an HSN/SAC code for {item['name']} in Stock & Price before invoicing.", 422, "hsn")
-            if item["gst_rate_bp"] is None:
+            item_rate_bp = _effective_gst_rate(raw, item["gst_rate_bp"], item["name"])
+            if item_rate_bp is None:
                 raise ApiError(f"Set the GST rate for {item['name']} in Stock & Price before invoicing.", 422, "gst_rate")
-            if item["gst_rate_bp"] > 0 and not business.get("gstin"):
+            if item_rate_bp > 0 and not business.get("gstin"):
                 raise ApiError(
                     "The agency GSTIN is missing. An unregistered agency must not charge GST; confirm the agency's registration status and product tax setup with the CA.",
                     422, "gstin",
@@ -362,7 +396,7 @@ def sale_create():
             taxable_gross += gross
             lines.append({"kind": "product", "action": "item", "item_id": iid, "description": item["name"],
                           "hsn": item["hsn"], "unit": item["unit"], "qty_milli": qty_milli,
-                          "rate_paise": rate, "gross_paise": gross, "gst_rate_bp": item["gst_rate_bp"],
+                          "rate_paise": rate, "gross_paise": gross, "gst_rate_bp": item_rate_bp,
                           "detail": item["unit"]})
 
         if not lines:

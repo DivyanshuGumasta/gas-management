@@ -152,3 +152,9 @@
   .rc-invoice-head, .rc-invoice-meta, .rc-bill-to, .rc-invoice-bottom, .rc-invoice-footer { break-inside: avoid; }
   .rc-stamp { position: fixed !important; }
 }
+
+/* v0.6.1: invoice-specific GST rate and customer-held cylinder availability */
+.sn-product-tax { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin-top: 3px; color: var(--muted); font-size: 9px; font-weight: 500; }
+.sn-product-tax label { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+.sn-product-tax input { width: 58px; min-height: 24px; padding: 2px 5px; border: 1px solid var(--line, #d7d7df); border-radius: 6px; background: var(--surface, #fff); color: var(--text, #20202a); font: inherit; }
+.sn-held-count { color: var(--muted); }

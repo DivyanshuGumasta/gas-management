@@ -29,7 +29,7 @@ def _sale(conn, customer_id, day, clock, name, qty, rate, paid):
         (cur.lastrowid, _type_id(conn, name), qty, rate * 100, total),
     )
 
-
+# gengerate some smaple data for the demo database. 
 def seed(conn):
     today = date.today()
     yesterday = today - timedelta(days=1)
