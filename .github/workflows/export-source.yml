@@ -1,0 +1,33 @@
+name: Temporary v0.7.0 source export
+
+on:
+  push:
+    branches:
+      - temp/reports-v070-export
+    paths:
+      - .github/workflows/export-source.yml
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out v0.6.5
+        uses: actions/checkout@v4
+        with:
+          ref: cf03e60a973703e999fa9f31a0b7dcec8519df9e
+          path: source
+      - name: Remove machine-local data and generated files from export
+        shell: bash
+        run: |
+          rm -rf source/agni-gas/data
+          find source/agni-gas -type d -name __pycache__ -prune -exec rm -rf {} +
+          find source/agni-gas -type f -name '*.py[co]' -delete
+          rm -f source/agni-gas/output.txt
+      - name: Package source
+        run: cd source && zip -qr ../agni-gas-v0.6.5-clean.zip agni-gas
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agni-gas-v0.6.5-clean
+          path: agni-gas-v0.6.5-clean.zip
+          if-no-files-found: error
+          retention-days: 1
